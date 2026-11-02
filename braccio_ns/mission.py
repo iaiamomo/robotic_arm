@@ -1,15 +1,22 @@
 """start_mission (thesis §3.4.2): perception snapshot -> PDDL init -> LLM goal ->
 problem file -> FF -> plan -> execution."""
+
 from .config import resolve
-from .planner import run_planner
 from .pddl import save_problem_file
+from .planner import run_planner
 from .world import Grid, build_world_state
 
 
 class MissionResult:
     def __init__(self, request, goal=None, plan=None, ok=False, error=None, problem_text=None):
-        self.request, self.goal, self.plan, self.ok, self.error, self.problem_text = \
-            request, goal, plan, ok, error, problem_text
+        self.request, self.goal, self.plan, self.ok, self.error, self.problem_text = (
+            request,
+            goal,
+            plan,
+            ok,
+            error,
+            problem_text,
+        )
         self.world = None
 
     def __repr__(self):

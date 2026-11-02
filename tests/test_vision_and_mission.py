@@ -18,8 +18,13 @@ def scene(cfg, items):
     return s
 
 
-ITEMS = [("RED", "CELL_0_0", 1), ("GREEN", "CELL_1_2", 1), ("BLUE", "CELL_0_4", 1),
-         ("BLUE", "CELL_2_5", 1), ("RED", "CELL_2_5", 2)]
+ITEMS = [
+    ("RED", "CELL_0_0", 1),
+    ("GREEN", "CELL_1_2", 1),
+    ("BLUE", "CELL_0_4", 1),
+    ("BLUE", "CELL_2_5", 1),
+    ("RED", "CELL_2_5", 2),
+]
 
 
 def boot(cfg, goal="(:goal (and))", items=ITEMS):
@@ -43,7 +48,7 @@ def test_perception_detects_cubes_and_stack(cfg):
     top = [k for k, v in mem.items() if v["level"] == 2]
     assert len(top) == 1 and mem[top[0]]["on_top_of"] == f"HIDDEN_UNDER_{top[0]}"
     assert {ws.stack_cell(b) for b in ws.blocks} == {"CELL_0_0", "CELL_1_2", "CELL_0_4", "CELL_2_5"}
-    for k, v in mem.items():   # localisation error vs ground truth
+    for k, v in mem.items():  # localisation error vs ground truth
         x, y = Grid(cfg["grid"]).center(ws.stack_cell(k))
         assert np.hypot(v["pos"][0] - x, v["pos"][1] - y) < 0.006
 
@@ -74,7 +79,7 @@ def test_end_to_end_mission_moves_physical_cubes(cfg):
 
 @needs_ff
 def test_unreachable_plan_is_rejected_before_moving(cfg):
-    cfg["grid"]["origin_xy"] = [0.10, -0.0875]   # row 0 too close to the base
+    cfg["grid"]["origin_xy"] = [0.10, -0.0875]  # row 0 too close to the base
     s = boot(cfg, items=[("RED", "CELL_3_0", 1)])
     rid = next(iter(s.perception.target_memory()))
     s.translator.goal = f"(:goal (and (on {rid} CELL_0_0)))"
@@ -97,9 +102,14 @@ class FakeLLM:
 
 def test_llm_translator_retries_on_invalid_goal(cfg):
     g = Grid(cfg["grid"])
-    ws = build_world_state({"RED_1": {"color": "RED", "pos": [0.3, 0, 0.03], "level": 1},
-                            "GREEN_2": {"color": "GREEN", "pos": [0.33, 0.05, 0.03], "level": 1}},
-                           g, 0.03)
+    ws = build_world_state(
+        {
+            "RED_1": {"color": "RED", "pos": [0.3, 0, 0.03], "level": 1},
+            "GREEN_2": {"color": "GREEN", "pos": [0.33, 0.05, 0.03], "level": 1},
+        },
+        g,
+        0.03,
+    )
     fake = FakeLLM(["(:goal (and (above GREEN_2 RED_1)))", "(:goal (and (on GREEN_2 RED_1)))"])
     tr = LLMGoalTranslator(cfg["llm"], cfg["planner"]["domain_file"], client=fake)
     goal, atoms, replies = tr.translate("green on red", ws, g, log=lambda *_: None)

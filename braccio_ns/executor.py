@@ -4,6 +4,7 @@ Every action of the plan is checked for IK feasibility on a copy of the world
 *before* the arm moves, so an unreachable placement aborts the mission instead
 of failing half-way (a failure mode reported in the thesis, §4.3).
 """
+
 import copy
 
 import numpy as np
@@ -61,7 +62,7 @@ class Executor:
             try:
                 all_poses.append(self.pick_place_poses(sim, b, tgt))
             except Unreachable as e:
-                raise ExecutionError(f"step {i} {name} {' '.join(args)}: {e}")
+                raise ExecutionError(f"step {i} {name} {' '.join(args)}: {e}") from e
             sim.apply_move(b, tgt, self.grid)
         return all_poses, sim
 
@@ -74,7 +75,7 @@ class Executor:
                 break
             b, _, tgt = self._check_action(ws, name, args)
             self.log(f"[{i + 1}/{len(plan)}] MOVE {b} -> {tgt}")
-            for label, fw in self.pick_place_poses(ws, b, tgt):
+            for _label, fw in self.pick_place_poses(ws, b, tgt):
                 self.arm.move(fw)
             ws.apply_move(b, tgt, self.grid)
         self.arm.home()
@@ -84,13 +85,21 @@ class Executor:
     def pick(self, ws, block):
         up = np.array([0, 0, self.r["approach_height_m"]])
         p = ws.grasp_point(block)
-        for xyz, g in [(p + up, self.r["grip_open_deg"]), (p, self.r["grip_open_deg"]),
-                       (p, self.r["grip_closed_deg"]), (p + up, self.r["grip_closed_deg"])]:
+        for xyz, g in [
+            (p + up, self.r["grip_open_deg"]),
+            (p, self.r["grip_open_deg"]),
+            (p, self.r["grip_closed_deg"]),
+            (p + up, self.r["grip_closed_deg"]),
+        ]:
             self.arm.move(self._pose(xyz, g))
 
     def drop(self, ws, target):
         up = np.array([0, 0, self.r["approach_height_m"]])
         p = ws.place_point(target, self.grid)
-        for xyz, g in [(p + up, self.r["grip_closed_deg"]), (p, self.r["grip_closed_deg"]),
-                       (p, self.r["grip_open_deg"]), (p + up, self.r["grip_open_deg"])]:
+        for xyz, g in [
+            (p + up, self.r["grip_closed_deg"]),
+            (p, self.r["grip_closed_deg"]),
+            (p, self.r["grip_open_deg"]),
+            (p + up, self.r["grip_open_deg"]),
+        ]:
             self.arm.move(self._pose(xyz, g))

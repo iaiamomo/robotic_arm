@@ -1,4 +1,5 @@
 """Wires the components together for real hardware or simulation."""
+
 import threading
 import time
 
@@ -26,10 +27,16 @@ class FixedGoalTranslator:
 
 def default_sim_scene(cfg):
     from .sim import SimScene
+
     s = SimScene(cfg["vision"]["cube_size_m"])
     g = Grid(cfg["grid"])
-    for color, cell, level in [("RED", "CELL_0_0", 1), ("GREEN", "CELL_1_2", 1), ("BLUE", "CELL_0_4", 1),
-                               ("BLUE", "CELL_2_5", 1), ("RED", "CELL_2_5", 2)]:
+    for color, cell, level in [
+        ("RED", "CELL_0_0", 1),
+        ("GREEN", "CELL_1_2", 1),
+        ("BLUE", "CELL_0_4", 1),
+        ("BLUE", "CELL_2_5", 1),
+        ("RED", "CELL_2_5", 2),
+    ]:
         x, y = g.center(cell)
         s.add(color, x, y, level)
     return s
@@ -42,13 +49,15 @@ class System:
         self.ik = BraccioIK(cfg["robot"])
         if sim:
             from .sim import SimArm, SimCamera, SimScene
+
             self.scene = scene or default_sim_scene(cfg)
-            self.camera = SimCamera(SimScene(self.scene.cube))       # empty scene for the background
+            self.camera = SimCamera(SimScene(self.scene.cube))  # empty scene for the background
             self.arm = SimArm(self.ik, self.scene, cfg["robot"])
             tf = self.camera.true_cam_to_robot
         else:
             from .camera import RealSenseCamera
             from .serial_link import BraccioSerial
+
             c, s = cfg["camera"], cfg["serial"]
             self.camera = RealSenseCamera(c["width"], c["height"], c["fps"])
             self.arm = BraccioSerial(s["port"], s["baudrate"], s["timeout_s"], s["move_settle_s"])
@@ -60,8 +69,9 @@ class System:
                 log("WARNING: no calibration file, run `python -m braccio_ns calibrate` first")
                 tf = CameraToRobot()
         self.perception = Perception(cfg, self.camera, tf)
-        self.translator = FixedGoalTranslator(goal) if goal else \
-            LLMGoalTranslator(cfg["llm"], cfg["planner"]["domain_file"])
+        self.translator = (
+            FixedGoalTranslator(goal) if goal else LLMGoalTranslator(cfg["llm"], cfg["planner"]["domain_file"])
+        )
         self.executor = Executor(cfg, self.ik, self.arm, self.grid, log)
         self.mission = Mission(cfg, self.translator, self.executor, log)
         self._stop = threading.Event()
@@ -70,7 +80,7 @@ class System:
     def capture_background(self):
         self.perception.update_background()
         if self.sim:
-            self.camera.scene = self.scene     # cubes "placed" after the empty background
+            self.camera.scene = self.scene  # cubes "placed" after the empty background
 
     def warmup(self, n=10):
         for _ in range(n):
@@ -93,6 +103,7 @@ class System:
                     self.log(f"vision error: {e}")
                     time.sleep(0.5)
                 time.sleep(period_s)
+
         self._vision_thread = threading.Thread(target=loop, daemon=True)
         self._vision_thread.start()
 

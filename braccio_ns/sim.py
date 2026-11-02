@@ -2,11 +2,12 @@
 cube top faces) and a simulated arm that executes MOVE commands through FK and
 grasps/releases cubes. Used by `python -m braccio_ns --sim` and by the tests.
 """
-import numpy as np
-import cv2
 
-from .camera import PinholeIntrinsics, deproject_pinhole
+import cv2
+import numpy as np
+
 from .calibration import CameraToRobot
+from .camera import PinholeIntrinsics, deproject_pinhole
 
 BGR = {"RED": (40, 40, 210), "GREEN": (50, 190, 50), "BLUE": (210, 60, 40), "MYSTERY": (200, 200, 200)}
 
@@ -36,12 +37,11 @@ def look_at(eye, target):
 
 
 class SimCamera:
-    def __init__(self, scene, width=640, height=480, eye=(0.58, 0.0, 0.30), target=(0.30, 0.0, 0.0),
-                 noise=2.0, seed=0):
+    def __init__(self, scene, width=640, height=480, eye=(0.58, 0.0, 0.30), target=(0.30, 0.0, 0.0), noise=2.0, seed=0):
         self.scene, self.w, self.h = scene, width, height
         self.intr = PinholeIntrinsics(615.0, 615.0, width / 2, height / 2, width, height)
         self.C = np.asarray(eye, float)
-        self.R = look_at(self.C, target)        # cam -> robot rotation
+        self.R = look_at(self.C, target)  # cam -> robot rotation
         self.depth_scale = 0.001
         self.noise = noise
         self.rng = np.random.default_rng(seed)
@@ -52,15 +52,20 @@ class SimCamera:
 
     def project(self, p):
         pc = self.to_cam(p)
-        return np.array([self.intr.fx * pc[0] / pc[2] + self.intr.ppx,
-                         self.intr.fy * pc[1] / pc[2] + self.intr.ppy]), pc[2]
+        return np.array(
+            [self.intr.fx * pc[0] / pc[2] + self.intr.ppx, self.intr.fy * pc[1] / pc[2] + self.intr.ppy]
+        ), pc[2]
 
     def _table_depth(self):
         u, v = np.meshgrid(np.arange(self.w), np.arange(self.h))
-        rays = np.stack([(u - self.intr.ppx) / self.intr.fx, (v - self.intr.ppy) / self.intr.fy,
-                         np.ones_like(u, float)], -1) @ self.R.T          # robot-frame directions (unnormalised, z_cam=1)
+        rays = (
+            np.stack(
+                [(u - self.intr.ppx) / self.intr.fx, (v - self.intr.ppy) / self.intr.fy, np.ones_like(u, float)], -1
+            )
+            @ self.R.T
+        )  # robot-frame rays with z_cam = 1
         t = -self.C[2] / np.where(np.abs(rays[..., 2]) < 1e-9, -1e-9, rays[..., 2])
-        return np.where(t > 0, t, 0)                                          # = z_cam depth since z_cam component is 1
+        return np.where(t > 0, t, 0)  # = z_cam depth since z_cam component is 1
 
     def get_frames(self):
         color = np.full((self.h, self.w, 3), 18, np.uint8)
@@ -72,10 +77,14 @@ class SimCamera:
             top = cz + half
             corners = [(cx - half, cy - half), (cx + half, cy - half), (cx + half, cy + half), (cx - half, cy + half)]
             # front (camera-facing, +x) side face, drawn first so the top face overwrites the shared edge
-            side = [(cx + half, cy - half, top), (cx + half, cy + half, top),
-                    (cx + half, cy + half, cz - half), (cx + half, cy - half, cz - half)]
+            side = [
+                (cx + half, cy - half, top),
+                (cx + half, cy + half, top),
+                (cx + half, cy + half, cz - half),
+                (cx + half, cy - half, cz - half),
+            ]
             for face, shade in ((side, 0.8), ([(x, y, top) for x, y in corners], 1.0)):
-                pts, zs = zip(*(self.project(p) for p in face))
+                pts, zs = zip(*(self.project(p) for p in face), strict=True)
                 poly = np.round(np.array(pts)).astype(np.int32)
                 col = tuple(int(c * shade) for c in BGR[k["color"]])
                 cv2.fillConvexPoly(color, poly, col)
@@ -84,12 +93,16 @@ class SimCamera:
                 depth[m == 1] = np.mean(zs)
         if self.noise:
             color = np.clip(color + self.rng.normal(0, self.noise, color.shape), 0, 255).astype(np.uint8)
-        return {"color": color, "depth": (depth / self.depth_scale).astype(np.uint16),
-                "intrinsics": self.intr, "depth_scale": self.depth_scale}
+        return {
+            "color": color,
+            "depth": (depth / self.depth_scale).astype(np.uint16),
+            "intrinsics": self.intr,
+            "depth_scale": self.depth_scale,
+        }
 
     def deproject(self, frame, uv, patch=5):
         u, v = int(round(uv[0])), int(round(uv[1]))
-        win = frame["depth"][max(v - patch, 0):v + patch + 1, max(u - patch, 0):u + patch + 1].astype(float)
+        win = frame["depth"][max(v - patch, 0) : v + patch + 1, max(u - patch, 0) : u + patch + 1].astype(float)
         win = win[win > 0]
         if win.size == 0:
             return None
@@ -125,7 +138,7 @@ class SimArm:
             below = self.scene.top_at(tip[:2], self.scene.cube * 0.6, exclude=self.held)
             base = 0.0 if below is None else below["xyz"][2] + self.scene.cube / 2
             if below is not None:
-                tip[:2] = below["xyz"][:2]      # cube self-centres on the one below
+                tip[:2] = below["xyz"][:2]  # cube self-centres on the one below
             self.held["xyz"] = np.array([tip[0], tip[1], base + self.scene.cube / 2])
             self.held = None
         self.grip = fw[0]

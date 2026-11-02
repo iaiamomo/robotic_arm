@@ -2,10 +2,12 @@
 3D localisation with the RealSense depth map, and a simple tracker that
 assigns persistent IDs and fills `target_memory`.
 """
+
 import threading
 
 import cv2
 import numpy as np
+
 
 def deproject_pixels(intr, us, vs, depth_m):
     """Vectorised pinhole deprojection (pixel + depth -> camera optical frame).
@@ -67,9 +69,14 @@ def identify_cubes(mask, frame, min_area=900, aspect=(0.8, 1.2), margin=10):
             x, y, w, h = cv2.boundingRect(contour)
             if area > min_area and aspect[0] < w / h < aspect[1]:
                 mo = cv2.moments(contour)
-                results.append({"label": label, "bbox": (x, y, w, h),
-                                "center": (mo["m10"] / mo["m00"], mo["m01"] / mo["m00"]),
-                                "contour": contour})
+                results.append(
+                    {
+                        "label": label,
+                        "bbox": (x, y, w, h),
+                        "center": (mo["m10"] / mo["m00"], mo["m01"] / mo["m00"]),
+                        "contour": contour,
+                    }
+                )
     return results
 
 
@@ -78,9 +85,12 @@ def drop_occluded(dets, cube):
     visible side face of a covered cube: drop it (the cube becomes HIDDEN_UNDER_*)."""
     keep = []
     for d in dets:
-        covered = any(o is not d and o["pos"][2] > d["pos"][2] + cube / 2
-                      and np.linalg.norm(np.subtract(o["pos"][:2], d["pos"][:2])) < cube
-                      for o in dets)
+        covered = any(
+            o is not d
+            and o["pos"][2] > d["pos"][2] + cube / 2
+            and np.linalg.norm(np.subtract(o["pos"][:2], d["pos"][:2])) < cube
+            for o in dets
+        )
         if not covered:
             keep.append(d)
     return keep
@@ -101,15 +111,21 @@ class Tracker:
     when the block is uncovered."""
 
     def __init__(self, match_tol=0.03, min_hits=3, max_misses=15, alpha=0.5, cube=0.03):
-        self.match_tol, self.min_hits, self.max_misses, self.alpha, self.cube = \
-            match_tol, min_hits, max_misses, alpha, cube
+        self.match_tol, self.min_hits, self.max_misses, self.alpha, self.cube = (
+            match_tol,
+            min_hits,
+            max_misses,
+            alpha,
+            cube,
+        )
         self.tracks, self.counter = {}, 0
 
     def update(self, detections):
         unmatched = set(self.tracks)
         for det in detections:
-            cands = [t for t in self.tracks.values()
-                     if t.id in unmatched and (t.color == det["label"] or t.color is None)]
+            cands = [
+                t for t in self.tracks.values() if t.id in unmatched and (t.color == det["label"] or t.color is None)
+            ]
             best = min(cands, key=lambda t: np.linalg.norm(t.pos - det["pos"]), default=None)
             if best is not None and np.linalg.norm(best.pos - det["pos"]) < self.match_tol:
                 best.pos = (1 - self.alpha) * best.pos + self.alpha * np.asarray(det["pos"])
@@ -123,8 +139,11 @@ class Tracker:
                 self.tracks[tid] = Track(tid, det["label"], det["pos"])
         for tid in unmatched:
             t = self.tracks[tid]
-            occluded = any(np.linalg.norm(np.subtract(d["pos"][:2], t.pos[:2])) < self.cube
-                           and d["pos"][2] > t.pos[2] + self.cube / 2 for d in detections)
+            occluded = any(
+                np.linalg.norm(np.subtract(d["pos"][:2], t.pos[:2])) < self.cube
+                and d["pos"][2] > t.pos[2] + self.cube / 2
+                for d in detections
+            )
             if occluded:
                 continue
             t.misses += 1
@@ -153,13 +172,20 @@ def tracks_to_memory(tracks, cube, xy_tol):
     """Build target_memory: level from top-surface height, on_top_of from xy overlap."""
     mem = {}
     for t in tracks:
-        mem[t.id] = {"color": t.color or "MYSTERY", "pos": t.pos.tolist(),
-                     "level": max(1, int(round(t.pos[2] / cube))), "on_top_of": None}
+        mem[t.id] = {
+            "color": t.color or "MYSTERY",
+            "pos": t.pos.tolist(),
+            "level": max(1, int(round(t.pos[2] / cube))),
+            "on_top_of": None,
+        }
     for oid, d in mem.items():
         if d["level"] < 2:
             continue
-        below = [o for o, e in mem.items() if e["level"] == d["level"] - 1
-                 and np.linalg.norm(np.subtract(e["pos"][:2], d["pos"][:2])) < xy_tol]
+        below = [
+            o
+            for o, e in mem.items()
+            if e["level"] == d["level"] - 1 and np.linalg.norm(np.subtract(e["pos"][:2], d["pos"][:2])) < xy_tol
+        ]
         d["on_top_of"] = below[0] if below else f"HIDDEN_UNDER_{oid}"
     return mem
 
@@ -170,8 +196,12 @@ class Perception:
         self.v = cfg["vision"]
         self.camera, self.tf = camera, cam_to_robot
         self.background = None
-        self.tracker = Tracker(self.v["track_match_tol_m"], self.v["track_min_hits"], self.v["track_max_misses"],
-                               cube=self.v["cube_size_m"])
+        self.tracker = Tracker(
+            self.v["track_match_tol_m"],
+            self.v["track_min_hits"],
+            self.v["track_max_misses"],
+            cube=self.v["cube_size_m"],
+        )
         self.lock = threading.Lock()
         self.last_frame, self.last_dets = None, []
 
@@ -189,10 +219,16 @@ class Perception:
         frame = self.camera.get_frames()
         if self.background is None:
             return []
-        mask, _ = get_mask_from_frames(self.background, frame["color"], self.v["diff_threshold"],
-                                       self.v.get("diff_mode", "max"))
-        cubes = identify_cubes(mask, frame["color"], self.v["min_area_px"],
-                               (self.v["aspect_min"], self.v["aspect_max"]), self.v["color_margin"])
+        mask, _ = get_mask_from_frames(
+            self.background, frame["color"], self.v["diff_threshold"], self.v.get("diff_mode", "max")
+        )
+        cubes = identify_cubes(
+            mask,
+            frame["color"],
+            self.v["min_area_px"],
+            (self.v["aspect_min"], self.v["aspect_max"]),
+            self.v["color_margin"],
+        )
         dets = []
         for c in cubes:
             pos = self.localize(frame, c["contour"])
@@ -214,7 +250,7 @@ class Perception:
         """
         mask = np.zeros(frame["depth"].shape, np.uint8)
         cv2.drawContours(mask, [contour], -1, 1, -1)
-        mask = cv2.erode(mask, np.ones((3, 3), np.uint8))       # drop mixed-depth border pixels
+        mask = cv2.erode(mask, np.ones((3, 3), np.uint8))  # drop mixed-depth border pixels
         vs, us = np.nonzero(mask)
         d = frame["depth"][vs, us].astype(float) * frame["depth_scale"]
         ok = d > 0

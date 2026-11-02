@@ -1,4 +1,5 @@
 """Configuration loading. Relative paths in the config are resolved from the repo root."""
+
 import copy
 import json
 from pathlib import Path

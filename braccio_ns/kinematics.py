@@ -5,6 +5,7 @@ Chain: base_link(origin) -> base_yaw -> shoulder -> elbow -> wrist_pitch -> wris
 Wrist roll is excluded from IK: for top-down grasps it only spins the gripper
 about its own axis, so it is held at `wrist_roll_deg`.
 """
+
 import numpy as np
 
 from .config import resolve
@@ -29,8 +30,10 @@ class Unreachable(RuntimeError):
 
 class BraccioIK:
     def __init__(self, robot_cfg):
-        import ikpy.chain
         import warnings
+
+        import ikpy.chain
+
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")  # ikpy warns about the fixed tip link
             self.chain = ikpy.chain.Chain.from_urdf_file(
@@ -74,8 +77,11 @@ class BraccioIK:
     @staticmethod
     def check_firmware_limits(fw):
         names = ["grip", "roll", "pitch", "elbow", "shoulder", "base"]
-        bad = [(n, round(a, 1)) for n, a in zip(names, fw)
-               if not FW_LIMITS[n][0] - 1e-6 <= a <= FW_LIMITS[n][1] + 1e-6]
+        bad = [
+            (n, round(a, 1))
+            for n, a in zip(names, fw, strict=True)
+            if not FW_LIMITS[n][0] - 1e-6 <= a <= FW_LIMITS[n][1] + 1e-6
+        ]
         return bad
 
     # ---------- kinematics ----------
@@ -87,14 +93,15 @@ class BraccioIK:
 
     # ---------- geometry read from the URDF (so IK and FK always agree) ----------
     def _geometry(self):
-        z = lambda name: float(next(l for l in self.chain.links if l.name == name).origin_translation[2])
-        h = z("base_yaw") + z("shoulder")          # table -> shoulder axis
+        links = {link.name: link for link in self.chain.links}
+        z = lambda name: float(links[name].origin_translation[2])
+        h = z("base_yaw") + z("shoulder")  # table -> shoulder axis
         return h, z("elbow"), z("wrist_pitch"), z("wrist_roll") + z("tip")
 
     def _analytic(self, r, zt, tilt_rad, elbow_sign):
         """Planar IK in the radial plane. Angles from vertical, positive = toward +r."""
         h, L1, L2, L3 = self._geometry()
-        phi = np.pi - tilt_rad                      # tip axis direction (pointing down, leaning out)
+        phi = np.pi - tilt_rad  # tip axis direction (pointing down, leaning out)
         wr, wz = r - L3 * np.sin(phi), zt - L3 * np.cos(phi) - h
         c2 = (wr * wr + wz * wz - L1 * L1 - L2 * L2) / (2 * L1 * L2)
         if abs(c2) > 1:
@@ -143,5 +150,6 @@ class BraccioIK:
                 if self.check_firmware_limits(fw):
                     continue
                 return {"q": q, "pos_err_m": pos_err, "tilt_deg": float(tilt)}
-        raise Unreachable(f"target {np.round(target, 3).tolist()} unreachable within joint limits "
-                          f"(max tilt {max_tilt_deg} deg)")
+        raise Unreachable(
+            f"target {np.round(target, 3).tolist()} unreachable within joint limits (max tilt {max_tilt_deg} deg)"
+        )

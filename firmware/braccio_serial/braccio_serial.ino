@@ -1,161 +1,168 @@
 /*
- * Arduino Braccio++ Firmware for Serial Command Handling
- * Source: A. M. Capparelli, Master's thesis (Sapienza), Listing 3.1
+ * Arduino Braccio++ serial command firmware.
+ * Based on A. M. Capparelli, MSc thesis (Sapienza), Listing 3.1.
  *
- * Serial protocol (115200 baud, newline-terminated):
- *   HOME                 -> move to home configuration
- *   GRIP <g>             -> set gripper angle (clamped to [GRIP_MIN, GRIP_MAX])
- *   MOVE g r p e s b     -> gripper, wrist roll, wrist pitch, elbow, shoulder, base
+ * Protocol (115200 baud, one command per line, case-insensitive):
+ *   HOME                     -> home configuration
+ *   GRIP <g>                 -> gripper angle
+ *   MOVE <g> <r> <p> <e> <s> <b>
+ *                            -> gripper, wrist roll, wrist pitch, elbow, shoulder, base
+ * Replies: "OK: ..." (with " (clamped)" if a value was limited) or "ERROR: ...".
+ *
+ * Changes w.r.t. the thesis listing:
+ *  - numeric arguments are validated: String::toFloat() returns 0 on garbage, which
+ *    the original then clamped to the joint minimum and executed;
+ *  - exact token counts (GRIP takes 1 value, MOVE exactly 6; "GRIPPER 150" is rejected);
+ *  - bounded input buffer;
+ *  - clamping is reported back to the host.
  */
 #include <Braccio++.h>
 
-/* Joint and Gripper Operating Ranges (Mechanical Limits) */
-static const float GRIP_MIN     = 120.0;
-static const float GRIP_MAX     = 230.0;
+/* Joint and gripper operating ranges (mechanical limits, degrees) */
+static const float GRIP_MIN = 120.0, GRIP_MAX = 230.0;
+static const float ROLL_MIN = 0.0, ROLL_MAX = 315.0;
+static const float PITCH_MIN = 80.0, PITCH_MAX = 230.0;
+static const float ELBOW_MIN = 75.0, ELBOW_MAX = 225.0;
+static const float SHOULDER_MIN = 60.0, SHOULDER_MAX = 250.0;
+static const float BASE_MIN = 0.0, BASE_MAX = 315.0;
 
-static const float ROLL_MIN     = 0.0;
-static const float ROLL_MAX     = 315.0;
-
-static const float PITCH_MIN    = 80.0;
-static const float PITCH_MAX    = 230.0;
-
-static const float ELBOW_MIN    = 75.0;
-static const float ELBOW_MAX    = 225.0;
-
-static const float SHOULDER_MIN = 60.0;
-static const float SHOULDER_MAX = 250.0;
-
-static const float BASE_MIN     = 0.0;
-static const float BASE_MAX     = 315.0;
-
-/* Default Home Configuration */
-static const float HOME_POS[6] = {
-  160.0,  // GRIP
-  150.0,  // ROLL
-  157.5,  // PITCH
-  157.5,  // ELBOW
-  157.5,  // SHOULDER
-  95.0,   // BASE
+static const float LIMITS[6][2] = {
+  {GRIP_MIN, GRIP_MAX}, {ROLL_MIN, ROLL_MAX}, {PITCH_MIN, PITCH_MAX},
+  {ELBOW_MIN, ELBOW_MAX}, {SHOULDER_MIN, SHOULDER_MAX}, {BASE_MIN, BASE_MAX},
 };
 
-/* Motor Object Initialization */
-static auto gripper    = Braccio.get(1);
-static auto wristRoll  = Braccio.get(2);
-static auto wristPitch = Braccio.get(3);
-static auto elbow      = Braccio.get(4);
-static auto shoulder   = Braccio.get(5);
-static auto base       = Braccio.get(6);
+/* Default home configuration: grip, roll, pitch, elbow, shoulder, base */
+static const float HOME_POS[6] = {160.0, 150.0, 157.5, 157.5, 157.5, 95.0};
+
+static const unsigned int MAX_LINE = 96;
+static const int MAX_TOKENS = 8;
+
+static auto gripper = Braccio.get(1);
 
 String inputLine;
+bool lineOverflow = false;
 
-/** Moves the manipulator to the predefined Home position */
 void goHome() {
-  Braccio.moveTo(
-    HOME_POS[0], HOME_POS[1], HOME_POS[2],
-    HOME_POS[3], HOME_POS[4], HOME_POS[5]
-  );
+  Braccio.moveTo(HOME_POS[0], HOME_POS[1], HOME_POS[2], HOME_POS[3], HOME_POS[4], HOME_POS[5]);
 }
 
-void setup() {
-  Serial.begin(115200);  // High-speed serial communication
-  while (!Serial);
-
-  if (!Braccio.begin()) {
-    Serial.println("ERROR: Braccio.begin() failed!");
-    while (true) {}  // Halt execution on hardware failure
+/* Strict decimal parser: [+-]digits[.digits] — rejects empty, garbage, "1.2.3". */
+bool parseNumber(const String &tok, float &out) {
+  unsigned int i = 0, n = tok.length();
+  if (n == 0) return false;
+  if (tok[0] == '+' || tok[0] == '-') i = 1;
+  bool digits = false, dot = false;
+  for (; i < n; i++) {
+    char c = tok[i];
+    if (c >= '0' && c <= '9') digits = true;
+    else if (c == '.' && !dot) dot = true;
+    else return false;
   }
-
-  goHome();
-  Serial.println("Braccio++ ready (Serial Control Mode active).");
-  Serial.println("Commands: HOME | GRIP X | MOVE g r p e s b");
+  if (!digits) return false;
+  out = tok.toFloat();
+  return true;
 }
 
-void loop() {
-  /* Serial Stream Polling */
-  while (Serial.available()) {
-    char c = Serial.read();
-
-    if (c == '\n' || c == '\r') {
-      if (inputLine.length() > 0) {
-        handleCommand(inputLine);
-        inputLine = "";  // Reset buffer
-      }
-    } else {
-      inputLine += c;  // Accumulate characters
-    }
+/* Split on spaces/tabs; returns the number of tokens (MAX_TOKENS+1 if there are too many). */
+int tokenize(const String &line, String tokens[]) {
+  int count = 0;
+  unsigned int i = 0, n = line.length();
+  while (i < n) {
+    while (i < n && (line[i] == ' ' || line[i] == '\t')) i++;
+    if (i >= n) break;
+    unsigned int start = i;
+    while (i < n && line[i] != ' ' && line[i] != '\t') i++;
+    if (count == MAX_TOKENS) return MAX_TOKENS + 1;
+    tokens[count++] = line.substring(start, i);
   }
+  return count;
 }
 
-/** Command Parser and Execution Dispatcher */
-void handleCommand(String cmd) {
-  cmd.trim();
-  String upper = cmd;
-  upper.toUpperCase();
+bool clampValue(float &v, int joint) {
+  float c = constrain(v, LIMITS[joint][0], LIMITS[joint][1]);
+  bool changed = (c != v);
+  v = c;
+  return changed;
+}
 
-  // HOME Command execution
-  if (upper == "HOME") {
+void handleCommand(const String &line) {
+  String tok[MAX_TOKENS];
+  int n = tokenize(line, tok);
+  if (n == 0) return;
+  String cmd = tok[0];
+  cmd.toUpperCase();
+
+  if (cmd == "HOME") {
+    if (n != 1) { Serial.println("ERROR: HOME takes no arguments"); return; }
     goHome();
     Serial.println("OK: HOME");
     return;
   }
 
-  // GRIP Command execution (End-effector control)
-  if (upper.startsWith("GRIP")) {
-    float g = cmd.substring(4).toFloat();
-    g = constrain(g, GRIP_MIN, GRIP_MAX);
+  if (cmd == "GRIP") {
+    float g;
+    if (n != 2 || !parseNumber(tok[1], g)) {
+      Serial.println("ERROR: GRIP syntax. Expected: GRIP <angle>");
+      return;
+    }
+    bool clamped = clampValue(g, 0);
     gripper.move().to(g);
-    Serial.print("OK: GRIP -> "); Serial.println(g);
+    Serial.print("OK: GRIP -> ");
+    Serial.print(g);
+    Serial.println(clamped ? " (clamped)" : "");
     return;
   }
 
-  // MOVE Command execution (Multi-joint coordination)
-  if (upper.startsWith("MOVE")) {
+  if (cmd == "MOVE") {
     float a[6];
-    if (!parseMove(cmd, a)) {
-      Serial.println("ERROR: MOVE syntax error. Expected: MOVE g r p e s b");
-      return;
+    if (n != 7) { Serial.println("ERROR: MOVE syntax. Expected: MOVE g r p e s b"); return; }
+    for (int k = 0; k < 6; k++) {
+      if (!parseNumber(tok[k + 1], a[k])) {
+        Serial.print("ERROR: MOVE argument ");
+        Serial.print(k + 1);
+        Serial.println(" is not a number");
+        return;
+      }
     }
-    applyLimits(a);  // Safety software constraints
+    bool clamped = false;
+    for (int k = 0; k < 6; k++) clamped |= clampValue(a[k], k);
     Braccio.moveTo(a[0], a[1], a[2], a[3], a[4], a[5]);
-    Serial.println("OK: MOVE");
+    Serial.println(clamped ? "OK: MOVE (clamped)" : "OK: MOVE");
     return;
   }
 
   Serial.println("ERROR: Unknown command");
 }
 
-/** Parses a MOVE string into an array of float coordinates */
-bool parseMove(String cmd, float out[6]) {
-  cmd = cmd.substring(4);
-  cmd.trim();
+void setup() {
+  Serial.begin(115200);
+  while (!Serial);
+  inputLine.reserve(MAX_LINE);
 
-  int idx = 0;
-  int start = 0;
-
-  while (idx < 6) {
-    int space = cmd.indexOf(' ', start);
-    String token;
-
-    if (space == -1) token = cmd.substring(start);
-    else token = cmd.substring(start, space);
-
-    token.trim();
-    if (token.length() == 0) return false;
-
-    out[idx++] = token.toFloat();
-    if (space == -1) break;
-    start = space + 1;
+  if (!Braccio.begin()) {
+    Serial.println("ERROR: Braccio.begin() failed!");
+    while (true) {}
   }
-
-  return idx == 6;
+  goHome();
+  Serial.println("Braccio++ ready (Serial Control Mode active).");
+  Serial.println("Commands: HOME | GRIP X | MOVE g r p e s b");
 }
 
-/** Enforces hardware safety limits on incoming joint angles */
-void applyLimits(float a[6]) {
-  a[0] = constrain(a[0], GRIP_MIN, GRIP_MAX);
-  a[1] = constrain(a[1], ROLL_MIN, ROLL_MAX);
-  a[2] = constrain(a[2], PITCH_MIN, PITCH_MAX);
-  a[3] = constrain(a[3], ELBOW_MIN, ELBOW_MAX);
-  a[4] = constrain(a[4], SHOULDER_MIN, SHOULDER_MAX);
-  a[5] = constrain(a[5], BASE_MIN, BASE_MAX);
+void loop() {
+  while (Serial.available()) {
+    char c = Serial.read();
+    if (c == '\n' || c == '\r') {
+      if (lineOverflow) {
+        Serial.println("ERROR: line too long");
+      } else if (inputLine.length() > 0) {
+        handleCommand(inputLine);
+      }
+      inputLine = "";
+      lineOverflow = false;
+    } else if (inputLine.length() < MAX_LINE) {
+      inputLine += c;
+    } else {
+      lineOverflow = true;
+    }
+  }
 }

@@ -5,11 +5,10 @@ LLM → PDDL → Fast-Forward → serial pipeline, with Intel RealSense D435i pe
 Based on the Master's thesis of **Agnese Maria Capparelli** (Sapienza Università di Roma).
 
 > **Provenance — read this first.**
-> - `firmware/` and `pddl/domain.pddl` are Agnese's code, transcribed unchanged from the thesis.
-> - `thesis_listings/` contains every other listing exactly as printed (fragments, including bugs).
-> - `braccio_ns/` is a **reconstruction** of the missing system, written from the thesis
->   description. It is not Agnese's original code. Where it deviates from the listings,
->   the reason is given in [`NOTES.md`](NOTES.md).
+> - `pddl/domain.pddl` is Agnese's domain, unchanged. `firmware/` is her Listing 3.1 with input validation added.
+> - `braccio_ns/` implements the system described in the thesis. The thesis prints only fragments of the
+>   Python code, so this package is a re-implementation, not Agnese's original source.
+>   [`NOTES.md`](NOTES.md) lists the issues found in the printed listings and every design choice.
 > - It has been tested end-to-end **in simulation only**: synthetic RGB-D camera, simulated arm,
 >   and the real FF planner. All values marked `CALIBRATE` in `config/default.json` must be
 >   measured on the real setup.
@@ -27,9 +26,8 @@ domain.pddl + problem.pddl ─► FF ─► plan ─► reachability check ─�
 
 | Path | Origin | Content |
 |---|---|---|
-| `firmware/braccio_serial/` | thesis (Listing 3.1) | Serial command firmware: `HOME`, `GRIP g`, `MOVE g r p e s b` |
+| `firmware/braccio_serial/` | thesis (Listing 3.1) + validation | Serial command firmware: `HOME`, `GRIP g`, `MOVE g r p e s b` |
 | `pddl/domain.pddl` | thesis (Listing 3.8) | Blocks-world domain |
-| `thesis_listings/` | thesis | All other listings, verbatim |
 | `braccio_ns/serial_link.py` | reconstructed | pyserial client for the firmware protocol |
 | `braccio_ns/kinematics.py` | reconstructed | IK (analytic, verified with IKPy FK on the URDF) + firmware angle mapping |
 | `urdf/braccio_plusplus.urdf` | reconstructed | `braccio.urdf` was not in the thesis — **approximate** link lengths |
@@ -44,12 +42,12 @@ domain.pddl + problem.pddl ─► FF ─► plan ─► reachability check ─�
 | `braccio_ns/mission.py` | reconstructed | `start_mission` |
 | `braccio_ns/gui.py` | reconstructed | Tkinter GUI as described in §3.1 |
 | `braccio_ns/sim.py` | new | Synthetic RGB-D camera + simulated arm (FK-driven grasp/release) |
-| `tests/` | new | 14 tests: symbolic, geometry, vision, end-to-end simulated missions |
+| `tests/` | new | Python tests (symbolic, geometry, vision, end-to-end missions) + host-compiled firmware parser tests |
 
 ## Setup
 
 ```bash
-pip install -r requirements.txt
+pip install -e ".[realsense]"        # or: pip install -r requirements.txt
 # FF planner (thesis setup: inside WSL on Windows)
 #   build FF-v2.3; on modern gcc add -fcommon to CFLAGS in the makefile
 #   put the `ff` binary in the repo root  ->  planner.command = ["wsl", "./ff"]  (default)
@@ -73,6 +71,21 @@ python -m braccio_ns --ff ./ff mission "..." --sim --goal "(:goal (and (on GREEN
 FF_PATH=./ff pytest -q
 ```
 `--goal` bypasses the LLM, which is useful to test perception, planning and the arm on their own.
+After `pip install -e .`, the `braccio-ns` command can be used instead of `python -m braccio_ns`.
+
+## Development
+
+```bash
+pip install -e ".[dev]"
+ruff check braccio_ns tests && ruff format --check braccio_ns tests
+FF_PATH=/path/to/ff pytest -q       # tests that need FF are skipped without it
+tests/firmware/run_tests.sh         # firmware command parser, compiled with g++ against mocks
+```
+GitHub Actions (`.github/workflows/ci.yml`) runs the following on every push:
+- builds FF;
+- runs lint and the tests on Python 3.10 and 3.12;
+- runs the firmware parser tests;
+- compiles the sketch for the Braccio++ board (`arduino:mbed_nano:nanorp2040connect`).
 
 ## Before running on the real arm (`CALIBRATE`)
 

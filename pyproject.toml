@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "braccio-ns"
+version = "0.1.0"
+description = "Neuro-symbolic natural-language control of an Arduino Braccio++ (LLM -> PDDL -> FF -> IK)"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Agnese Maria Capparelli" }, { name = "Flavia Monti", email = "monti@diag.uniroma1.it" }]
+dependencies = [
+  "numpy",
+  "opencv-contrib-python>=4.7",
+  "ikpy>=3.3",
+  "pyserial",
+  "openai>=1.0",
+]
+
+[project.optional-dependencies]
+realsense = ["pyrealsense2"]
+dev = ["pytest", "ruff"]
+
+[project.scripts]
+braccio-ns = "braccio_ns.__main__:main"
+
+[tool.setuptools]
+packages = ["braccio_ns"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["E731"]
+per-file-ignores = { "braccio_ns/llm.py" = ["E501"] }  # prompt text
+
+[tool.ruff.lint.isort]
+known-first-party = ["braccio_ns", "conftest"]

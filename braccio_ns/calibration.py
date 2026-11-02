@@ -7,6 +7,7 @@ the camera frame (rs2_deproject_pixel_to_point). The robot-side point is the FK
 of the commanded joints plus the marker offset. Umeyama then estimates the
 similarity transform  p_robot = s * R @ p_cam + t  that minimises the RMSE.
 """
+
 import json
 import time
 
@@ -33,15 +34,17 @@ def umeyama(src, dst, with_scale=True):
     if np.linalg.det(U) * np.linalg.det(Vt) < 0:
         S[2, 2] = -1  # avoid reflections
     R = U @ S @ Vt
-    var_s = (xs ** 2).sum() / n
+    var_s = (xs**2).sum() / n
     s = float(np.trace(np.diag(D) @ S) / var_s) if with_scale else 1.0
     t = mu_d - s * R @ mu_s
     return R, t, s
 
 
 class CameraToRobot:
-    def __init__(self, R=np.eye(3), t=np.zeros(3), s=1.0, rmse=None):
-        self.R, self.t, self.s, self.rmse = np.asarray(R, float), np.asarray(t, float), float(s), rmse
+    def __init__(self, R=None, t=None, s=1.0, rmse=None):
+        self.R = np.eye(3) if R is None else np.asarray(R, float)
+        self.t = np.zeros(3) if t is None else np.asarray(t, float)
+        self.s, self.rmse = float(s), rmse
 
     def __call__(self, p_cam):
         p = np.asarray(p_cam, float)
@@ -55,8 +58,9 @@ class CameraToRobot:
         return tf
 
     def save(self, path):
-        resolve(path).write_text(json.dumps(
-            {"R": self.R.tolist(), "t": self.t.tolist(), "s": self.s, "rmse_m": self.rmse}, indent=2))
+        resolve(path).write_text(
+            json.dumps({"R": self.R.tolist(), "t": self.t.tolist(), "s": self.s, "rmse_m": self.rmse}, indent=2)
+        )
 
     @classmethod
     def load(cls, path):
@@ -79,7 +83,7 @@ def detect_marker_center(detector, color, marker_id):
     corners, ids, _ = detector.detectMarkers(color)
     if ids is None:
         return None
-    for c, i in zip(corners, ids.flatten()):
+    for c, i in zip(corners, ids.flatten(), strict=True):
         if int(i) == marker_id:
             return c[0].mean(axis=0)  # (u, v)
     return None
@@ -90,8 +94,7 @@ def run_calibration(cfg, camera, arm, ik, log=print):
     import cv2.aruco as aruco
 
     cal = cfg["calibration"]
-    detector = aruco.ArucoDetector(aruco.getPredefinedDictionary(aruco.DICT_4X4_50),
-                                   aruco.DetectorParameters())
+    detector = aruco.ArucoDetector(aruco.getPredefinedDictionary(aruco.DICT_4X4_50), aruco.DetectorParameters())
     offset = np.asarray(cal["marker_offset_tip_m"], float)
     cam_pts, rob_pts = [], []
 
@@ -131,7 +134,8 @@ def run_calibration(cfg, camera, arm, ik, log=print):
         raise RuntimeError(f"only {len(cam_pts)} valid points, calibration aborted")
     tf = CameraToRobot.fit(np.asarray(cam_pts), np.asarray(rob_pts))
     tf.save(cal["file"])
-    np.savez(str(resolve(cal["file"])).replace(".json", "_points.npz"),
-             X_mat=np.asarray(cam_pts), Y_mat=np.asarray(rob_pts))
-    log(f"Calibration saved, RMSE = {tf.rmse*1000:.1f} mm over {len(cam_pts)} points")
+    np.savez(
+        str(resolve(cal["file"])).replace(".json", "_points.npz"), X_mat=np.asarray(cam_pts), Y_mat=np.asarray(rob_pts)
+    )
+    log(f"Calibration saved, RMSE = {tf.rmse * 1000:.1f} mm over {len(cam_pts)} points")
     return tf

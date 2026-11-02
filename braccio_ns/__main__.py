@@ -7,6 +7,7 @@
   python -m braccio_ns reach      # IK reachability map of the grid
 Common: --config my.json  --ff /path/to/ff  --port COM3
 """
+
 import argparse
 import sys
 
@@ -25,6 +26,7 @@ def make_cfg(a):
 def cmd_marker(a):
     import cv2
     import cv2.aruco as aruco
+
     img = aruco.generateImageMarker(aruco.getPredefinedDictionary(aruco.DICT_4X4_50), a.id, 400)
     cv2.imwrite(a.out, img)
     print(f"Marker {a.id} saved as {a.out}")
@@ -33,6 +35,7 @@ def cmd_marker(a):
 def cmd_reach(a):
     from .kinematics import BraccioIK, Unreachable
     from .world import Grid
+
     cfg = make_cfg(a)
     ik, g, cube = BraccioIK(cfg["robot"]), Grid(cfg["grid"]), cfg["vision"]["cube_size_m"]
     h = cfg["robot"]["approach_height_m"]
@@ -58,12 +61,15 @@ def cmd_reach(a):
 def cmd_calibrate(a):
     from .calibration import run_calibration
     from .system import System
+
     cfg = make_cfg(a)
     s = System(cfg, sim=a.sim, goal="(:goal (and))")
     if a.sim:
         # In simulation the ArUco marker is not rendered: fit on noisy synthetic pairs instead.
         import numpy as np
+
         from .calibration import CameraToRobot, default_reference_points
+
         rob = np.asarray(default_reference_points(cfg["grid"], cfg["calibration"]["n_points"]))
         true = s.camera.true_cam_to_robot
         cam = (true.R.T @ (rob - true.t).T).T + np.random.default_rng(0).normal(0, 0.002, rob.shape)
@@ -76,6 +82,7 @@ def cmd_calibrate(a):
 
 def cmd_mission(a):
     from .system import System
+
     cfg = make_cfg(a)
     s = System(cfg, sim=a.sim, goal=a.goal)
     s.capture_background()
@@ -94,6 +101,7 @@ def cmd_mission(a):
 def cmd_gui(a):
     from .gui import App
     from .system import System
+
     cfg = make_cfg(a)
     s = System(cfg, sim=a.sim, goal=a.goal)
     if a.sim:
@@ -108,10 +116,14 @@ def main(argv=None):
     p.add_argument("--port", help="serial port of the Braccio++")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    m = sub.add_parser("marker"); m.add_argument("--id", type=int, default=0); m.add_argument("--out", default="marker_0.png")
+    m = sub.add_parser("marker")
+    m.add_argument("--id", type=int, default=0)
+    m.add_argument("--out", default="marker_0.png")
     m.set_defaults(fn=cmd_marker)
     sub.add_parser("reach").set_defaults(fn=cmd_reach)
-    c = sub.add_parser("calibrate"); c.add_argument("--sim", action="store_true"); c.set_defaults(fn=cmd_calibrate)
+    c = sub.add_parser("calibrate")
+    c.add_argument("--sim", action="store_true")
+    c.set_defaults(fn=cmd_calibrate)
     for name, fn in (("mission", cmd_mission), ("gui", cmd_gui)):
         q = sub.add_parser(name)
         if name == "mission":

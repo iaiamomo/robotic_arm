@@ -6,6 +6,7 @@ few-shot examples (mentioned in the thesis but not printed) are reconstructed.
 Added: the reply is validated against the known identifiers and, on failure,
 the model gets one corrective retry (`max_retries`).
 """
+
 from .config import resolve
 from .pddl import GoalError, extract_goal, validate_goal
 
@@ -26,12 +27,15 @@ The domain is as follows:
 {domain}"""
 
 FEW_SHOT = [
-    ("Blocks: RED_1, GREEN_2, BLUE_3\nRequest: put the green block on the red one",
-     "(:goal (and (on GREEN_2 RED_1)))"),
-    ("Blocks: RED_1, GREEN_2, BLUE_3\nRequest: build a tower with the blue cube at the bottom and the red cube on top",
-     "(:goal (and (on GREEN_2 BLUE_3) (on RED_1 GREEN_2)))"),
-    ("Blocks: RED_4, HIDDEN_UNDER_RED_4, GREEN_7\nRequest: move the red block to cell 2_3 and put the green one on the block that was under it",
-     "(:goal (and (on RED_4 CELL_2_3) (on GREEN_7 HIDDEN_UNDER_RED_4)))"),
+    ("Blocks: RED_1, GREEN_2, BLUE_3\nRequest: put the green block on the red one", "(:goal (and (on GREEN_2 RED_1)))"),
+    (
+        "Blocks: RED_1, GREEN_2, BLUE_3\nRequest: build a tower with the blue cube at the bottom and the red cube on top",
+        "(:goal (and (on GREEN_2 BLUE_3) (on RED_1 GREEN_2)))",
+    ),
+    (
+        "Blocks: RED_4, HIDDEN_UNDER_RED_4, GREEN_7\nRequest: move the red block to cell 2_3 and put the green one on the block that was under it",
+        "(:goal (and (on RED_4 CELL_2_3) (on GREEN_7 HIDDEN_UNDER_RED_4)))",
+    ),
 ]
 
 
@@ -64,12 +68,14 @@ class LLMGoalTranslator:
         self.domain_text = resolve(domain_file).read_text()
         if client is None:
             from openai import OpenAI
+
             client = OpenAI(base_url=llm_cfg["base_url"], api_key=llm_cfg.get("api_key", "lm-studio"))
         self.client = client
 
     def _ask(self, messages):
         r = self.client.chat.completions.create(
-            model=self.cfg["model"], messages=messages, temperature=self.cfg.get("temperature", 0.0))
+            model=self.cfg["model"], messages=messages, temperature=self.cfg.get("temperature", 0.0)
+        )
         return r.choices[0].message.content or ""
 
     def translate(self, request, ws, grid, log=print):
@@ -86,6 +92,9 @@ class LLMGoalTranslator:
                 log(f"LLM goal rejected (attempt {attempt + 1}): {e}")
                 messages = messages + [
                     {"role": "assistant", "content": reply},
-                    {"role": "user", "content": f"That goal is invalid: {e}. Answer again with ONLY the corrected (:goal (and ...))."},
+                    {
+                        "role": "user",
+                        "content": f"That goal is invalid: {e}. Answer again with ONLY the corrected (:goal (and ...)).",
+                    },
                 ]
         raise GoalError(f"LLM could not produce a valid goal. Last reply: {replies[-1]!r}")

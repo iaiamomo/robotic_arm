@@ -2,9 +2,10 @@
 
     HOME | GRIP <g> | MOVE g r p e s b      (115200 baud, newline-terminated)
 
-The firmware replies "OK: ..." or "ERROR: ...". Braccio.moveTo() returns before the
+The firmware replies "OK: ..." (" (clamped)" if it limited a value) or "ERROR: ...". Braccio.moveTo() returns before the
 motion ends, so we wait `move_settle_s` after every command.
 """
+
 import time
 
 
@@ -15,6 +16,7 @@ class BraccioSerialError(RuntimeError):
 class BraccioSerial:
     def __init__(self, port, baudrate=115200, timeout_s=5.0, move_settle_s=1.5):
         import serial  # pyserial
+
         self.ser = serial.Serial(port, baudrate, timeout=timeout_s)
         self.timeout_s = timeout_s
         self.move_settle_s = move_settle_s
@@ -41,6 +43,9 @@ class BraccioSerial:
                 continue
             if reply.startswith("OK"):
                 time.sleep(self.move_settle_s)
+                if "(clamped)" in reply:
+                    # IK already enforces the limits: a clamp means config and firmware disagree.
+                    raise BraccioSerialError(f"{line!r} was clamped by the firmware ({reply})")
                 return reply
             if reply.startswith("ERROR"):
                 raise BraccioSerialError(f"{line!r} -> {reply}")

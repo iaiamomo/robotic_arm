@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: System packages
+        run: sudo apt-get update && sudo apt-get install -y flex bison libgl1
+      - name: Build FF planner (v2.3)
+        run: |
+          git clone --depth 1 https://github.com/ronuchit/FF.git /tmp/FF
+          sed -i 's/^CFLAGS.*/& -fcommon/' /tmp/FF/makefile
+          make -C /tmp/FF
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Lint
+        run: |
+          ruff check braccio_ns tests
+          ruff format --check braccio_ns tests
+      - name: Tests
+        env:
+          FF_PATH: /tmp/FF/ff
+        run: pytest -q
+
+  firmware-logic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Host-compiled parser tests
+        run: tests/firmware/run_tests.sh
+
+  firmware-compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/compile-sketches@v1
+        with:
+          fqbn: arduino:mbed_nano:nanorp2040connect
+          sketch-paths: firmware/braccio_serial
+          libraries: |
+            - name: Arduino_Braccio_plusplus

@@ -3,6 +3,7 @@
 Fix w.r.t. Listing 3.13: actions are parsed with their arguments
 (MOVE <block> <from> <target>); the listing kept only the action name.
 """
+
 import re
 import subprocess
 
@@ -58,16 +59,19 @@ def _rel(path):
 
 def run_planner(planner_cfg, problem_file=None):
     cmd = list(planner_cfg["command"]) + [
-        "-o", _rel(planner_cfg["domain_file"]),
-        "-f", _rel(problem_file or planner_cfg["problem_file"]),
+        "-o",
+        _rel(planner_cfg["domain_file"]),
+        "-f",
+        _rel(problem_file or planner_cfg["problem_file"]),
     ]
     try:
-        res = subprocess.run(cmd, capture_output=True, text=True, cwd=REPO_ROOT,
-                             timeout=planner_cfg.get("timeout_s", 60))
+        res = subprocess.run(
+            cmd, capture_output=True, text=True, cwd=REPO_ROOT, timeout=planner_cfg.get("timeout_s", 60)
+        )
     except FileNotFoundError as e:
-        raise PlannerError(f"cannot run planner {cmd[0]!r}: {e}")
-    except subprocess.TimeoutExpired:
-        raise PlannerError("planner timeout")
+        raise PlannerError(f"cannot run planner {cmd[0]!r}: {e}") from e
+    except subprocess.TimeoutExpired as e:
+        raise PlannerError("planner timeout") from e
     try:
         return parse_ff_output(res.stdout)
     except GoalAlreadyTrue:

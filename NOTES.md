@@ -1,15 +1,15 @@
 # Notes on the thesis code and on the reconstruction
 
-## A. Issues in the thesis listings (`thesis_listings/`)
+## A. Issues found in the thesis listings, and how the repository handles them
 
-These could be errors made when the code was copied into the thesis, or bugs in the actual code.
-They need checking against Agnese's real source.
+The listings are not in the repository: they can be found in the thesis and in the first commit of the git history.
+These issues could be errors made when the code was copied into the thesis, or bugs in the actual code.
+They need checking against Agnese's real source. All of them are resolved in `braccio_ns/` and `firmware/`.
 
 1. **`get_pddl_base_data` — undefined names.** It assigns `sotto_id` / `sotto` but uses `under_id` / `under`. This raises `NameError`.
 2. **Problem ↔ domain mismatch.** The listing uses `block_at` (not declared in the domain) and type `location`
    (the domain has `cell`). It emits no cell objects and no `(clear cell)` facts.
-   *Verified:* FF on `thesis_listings/problem_example.pddl` returns "goal can be simplified to FALSE"
-   (see `tests/test_symbolic.py::test_thesis_example_problem_is_unsolvable`).
+   *Verified:* FF on the Listing 3.9 example returns "goal can be simplified to FALSE".
 3. **`parse_ff_output` returns an empty plan with this domain.** The regex captures only `MOVE`, which then fails the `startswith("MOVE_")` filter, and the arguments are lost.
 4. `problem_example.pddl` repeats `(has_color HIDDEN_UNDER_RED_5 MYSTERY)`.
 5. `identify_cubes`: GREEN has no margin, unlike RED and BLUE.
@@ -17,6 +17,9 @@ They need checking against Agnese's real source.
 7. `run_planner_wsl`: `shell=True` combined with a list argument.
 8. The prompt is described as few-shot, but no examples are printed.
 9. Firmware: the motor objects other than `gripper` are unused, and `startsWith("GRIP")` also accepts `GRIPPER x`.
+10. **Firmware safety.** `String::toFloat()` returns 0 for non-numeric input, so `MOVE 160 abc ...` drove
+    that joint to its mechanical limit (0 is clamped to the minimum) instead of being rejected. The input buffer
+    was also unbounded. Both are fixed in `firmware/`, and the fixes are covered by `tests/firmware/`.
 
 ## B. Design choices in `braccio_ns/` (where the thesis was silent or inconsistent)
 

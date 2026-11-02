@@ -1,6 +1,7 @@
 """GUI described in thesis §3.1: left = live list of detected objects;
 right = pick / drop buttons, command entry + Start Mission, Update Background.
 """
+
 import queue
 import threading
 import tkinter as tk
@@ -17,7 +18,7 @@ class App:
         self.preview = preview
         self.msgs = queue.Queue()
         self.sys.log = self.sys.executor.log = self.sys.mission.log = self._log
-        self.ws = None          # world state used by manual pick/drop
+        self.ws = None  # world state used by manual pick/drop
         self.holding = None
         self.busy = False
 
@@ -78,6 +79,7 @@ class App:
                 self._log(f"ERROR: {type(e).__name__}: {e}")
             finally:
                 self.root.after(0, lambda: self._set_busy(False))
+
         threading.Thread(target=work, daemon=True).start()
 
     def _snapshot(self):
@@ -132,6 +134,7 @@ class App:
             self.sys.executor.pick(self.ws, oid)
             self.holding = oid
             self._log(f"Holding {oid}")
+
         self._run(do)
 
     def drop(self):
@@ -145,6 +148,7 @@ class App:
             self.ws.apply_move(self.holding, tgt, self.sys.grid)
             self._log(f"Dropped {self.holding} on {tgt}")
             self.holding = None
+
         self._run(do)
 
     def quit(self):

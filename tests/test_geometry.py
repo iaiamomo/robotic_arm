@@ -52,4 +52,4 @@ def test_ik_rejects_out_of_reach(cfg):
     with pytest.raises(Unreachable):
         ik.solve([0.8, 0.0, 0.0])
     with pytest.raises(Unreachable):
-        ik.solve([0.05, 0.0, 0.0])   # too close: elbow/wrist limits of the firmware
+        ik.solve([0.05, 0.0, 0.0])  # too close: elbow/wrist limits of the firmware

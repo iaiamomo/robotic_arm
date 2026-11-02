@@ -4,6 +4,7 @@ Fixes w.r.t. Listings 3.9-3.11: table positions are `cell` objects (not
 `location`), "on table" is (on X CELL_r_c) (no undeclared `block_at`), and
 free cells are declared (clear CELL_r_c) so blocks can be moved onto them.
 """
+
 import re
 
 DOMAIN_NAME = "cardboard_block_world"
@@ -70,14 +71,14 @@ def extract_goal(text):
         elif text[j] == ")":
             depth -= 1
             if depth == 0:
-                return text[i:j + 1]
+                return text[i : j + 1]
     raise GoalError("unbalanced parentheses in the goal")
 
 
 def validate_goal(goal, blocks, cells):
     """Only (on X Y) atoms over known identifiers, X a block, X != Y. Returns
     (normalised_goal, atoms)."""
-    body = goal.strip()[len("(:goal"):-1].strip()
+    body = goal.strip()[len("(:goal") : -1].strip()
     if body.lower().startswith("(and"):
         body = body[4:].rstrip()[:-1]
     leftovers = GOAL_ATOM.sub("", body)

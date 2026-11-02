@@ -1,10 +1,12 @@
 """Intel RealSense D435i wrapper: colour + depth aligned to colour, deprojection."""
+
 import numpy as np
 
 
 class RealSenseCamera:
     def __init__(self, width=640, height=480, fps=30):
         import pyrealsense2 as rs
+
         self.rs = rs
         self.pipeline = rs.pipeline()
         conf = rs.config()
@@ -32,7 +34,7 @@ class RealSenseCamera:
         depth of a (2*patch+1)^2 window to reject holes/noise."""
         u, v = int(round(uv[0])), int(round(uv[1]))
         d = frame["depth"]
-        win = d[max(v - patch, 0):v + patch + 1, max(u - patch, 0):u + patch + 1].astype(float)
+        win = d[max(v - patch, 0) : v + patch + 1, max(u - patch, 0) : u + patch + 1].astype(float)
         win = win[win > 0]
         if win.size == 0:
             return None

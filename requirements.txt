@@ -1,7 +1,9 @@
+# Equivalent to: pip install -e ".[realsense,dev]"
 numpy
-opencv-contrib-python>=4.7   # cv2.aruco.ArucoDetector API
-pyrealsense2                 # not needed for --sim
+opencv-contrib-python>=4.7
 ikpy>=3.3
 pyserial
-openai>=1.0                  # OpenAI-compatible client for LM Studio
-pytest                       # tests only
+openai>=1.0
+pyrealsense2
+pytest
+ruff

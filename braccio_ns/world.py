@@ -5,6 +5,7 @@ with no visible block underneath gets a hidden support HIDDEN_UNDER_<ID> of
 colour MYSTERY (thesis Listing 3.9/3.10 convention). Table positions are the
 grid cells CELL_<row>_<col> (the cell_n_n identifiers in the LLM prompt).
 """
+
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -38,14 +39,14 @@ class Grid:
 class Block:
     id: str
     color: str
-    support: str              # block id or cell name
+    support: str  # block id or cell name
     xy: np.ndarray
     hidden: bool = False
 
 
 @dataclass
 class WorldState:
-    blocks: dict = field(default_factory=dict)   # id -> Block
+    blocks: dict = field(default_factory=dict)  # id -> Block
     cube: float = 0.03
 
     # ---- queries
