@@ -1,0 +1,130 @@
+"""Command line entry point.
+
+  python -m braccio_ns gui        [--sim] [--goal G] [--no-preview]
+  python -m braccio_ns mission "put the red block on the green one" [--sim] [--goal G] [--dry-run]
+  python -m braccio_ns calibrate  [--sim]
+  python -m braccio_ns marker     [--id 0] [--out marker_0.png]
+  python -m braccio_ns reach      # IK reachability map of the grid
+Common: --config my.json  --ff /path/to/ff  --port COM3
+"""
+import argparse
+import sys
+
+from .config import load_config
+
+
+def make_cfg(a):
+    over = {}
+    if getattr(a, "ff", None):
+        over.setdefault("planner", {})["command"] = [a.ff]
+    if getattr(a, "port", None):
+        over.setdefault("serial", {})["port"] = a.port
+    return load_config(a.config, over)
+
+
+def cmd_marker(a):
+    import cv2
+    import cv2.aruco as aruco
+    img = aruco.generateImageMarker(aruco.getPredefinedDictionary(aruco.DICT_4X4_50), a.id, 400)
+    cv2.imwrite(a.out, img)
+    print(f"Marker {a.id} saved as {a.out}")
+
+
+def cmd_reach(a):
+    from .kinematics import BraccioIK, Unreachable
+    from .world import Grid
+    cfg = make_cfg(a)
+    ik, g, cube = BraccioIK(cfg["robot"]), Grid(cfg["grid"]), cfg["vision"]["cube_size_m"]
+    h = cfg["robot"]["approach_height_m"]
+    print("Max tilt (deg) to grasp at levels 1..3 (+approach); X = unreachable")
+    for r in range(g.rows):
+        row = []
+        for c in range(g.cols):
+            x, y = g.center(g.name(r, c))
+            worst = 0
+            for lvl in (1, 2, 3):
+                for z in ((lvl - 0.5) * cube, (lvl - 0.5) * cube + h):
+                    try:
+                        worst = max(worst, abs(ik.solve([x, y, z])["tilt_deg"]))
+                    except Unreachable:
+                        worst = None
+                        break
+                if worst is None:
+                    break
+            row.append(" X " if worst is None else f"{worst:3.0f}")
+        print(f"row {r}: " + " ".join(row))
+
+
+def cmd_calibrate(a):
+    from .calibration import run_calibration
+    from .system import System
+    cfg = make_cfg(a)
+    s = System(cfg, sim=a.sim, goal="(:goal (and))")
+    if a.sim:
+        # In simulation the ArUco marker is not rendered: fit on noisy synthetic pairs instead.
+        import numpy as np
+        from .calibration import CameraToRobot, default_reference_points
+        rob = np.asarray(default_reference_points(cfg["grid"], cfg["calibration"]["n_points"]))
+        true = s.camera.true_cam_to_robot
+        cam = (true.R.T @ (rob - true.t).T).T + np.random.default_rng(0).normal(0, 0.002, rob.shape)
+        tf = CameraToRobot.fit(cam, rob)
+        print(f"Simulated calibration RMSE {tf.rmse * 1000:.2f} mm")
+        return
+    run_calibration(cfg, s.camera, s.arm, s.ik)
+    s.shutdown()
+
+
+def cmd_mission(a):
+    from .system import System
+    cfg = make_cfg(a)
+    s = System(cfg, sim=a.sim, goal=a.goal)
+    s.capture_background()
+    s.warmup(15)
+    mem = s.perception.target_memory()
+    print("Detected:", {k: (v["level"], v["on_top_of"]) for k, v in mem.items()})
+    res = s.run_mission(a.request, execute=not a.dry_run)
+    print(res)
+    if a.sim and res.ok and not a.dry_run:
+        s.warmup(15)
+        print("After execution:", {k: (v["level"], v["on_top_of"]) for k, v in s.perception.target_memory().items()})
+    s.shutdown()
+    return 0 if res.ok else 1
+
+
+def cmd_gui(a):
+    from .gui import App
+    from .system import System
+    cfg = make_cfg(a)
+    s = System(cfg, sim=a.sim, goal=a.goal)
+    if a.sim:
+        s.capture_background()
+    App(s, preview=not a.no_preview).run()
+
+
+def main(argv=None):
+    p = argparse.ArgumentParser(prog="braccio_ns")
+    p.add_argument("--config")
+    p.add_argument("--ff", help="path to the FF binary (overrides planner.command)")
+    p.add_argument("--port", help="serial port of the Braccio++")
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    m = sub.add_parser("marker"); m.add_argument("--id", type=int, default=0); m.add_argument("--out", default="marker_0.png")
+    m.set_defaults(fn=cmd_marker)
+    sub.add_parser("reach").set_defaults(fn=cmd_reach)
+    c = sub.add_parser("calibrate"); c.add_argument("--sim", action="store_true"); c.set_defaults(fn=cmd_calibrate)
+    for name, fn in (("mission", cmd_mission), ("gui", cmd_gui)):
+        q = sub.add_parser(name)
+        if name == "mission":
+            q.add_argument("request")
+            q.add_argument("--dry-run", action="store_true", help="plan only, do not move the arm")
+        else:
+            q.add_argument("--no-preview", action="store_true")
+        q.add_argument("--sim", action="store_true", help="synthetic camera + simulated arm")
+        q.add_argument("--goal", help="skip the LLM and use this PDDL goal")
+        q.set_defaults(fn=fn)
+    a = p.parse_args(argv)
+    return a.fn(a) or 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

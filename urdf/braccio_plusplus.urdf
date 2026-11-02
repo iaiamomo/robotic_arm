@@ -1,0 +1,62 @@
+<?xml version="1.0"?>
+<!--
+  Approximate kinematic model of the Arduino Braccio++ (RECONSTRUCTED, not from the thesis).
+  Link lengths are taken from the classic Braccio geometry and MUST be measured on the real arm.
+  Zero configuration = arm pointing straight up (firmware angle 157.5 deg on every joint).
+  Joint limits = firmware mechanical limits (Listing 3.1) minus the 157.5 deg offset.
+-->
+<robot name="braccio_plusplus">
+  <link name="base_link"/>
+  <link name="shoulder_link"/>
+  <link name="upper_arm_link"/>
+  <link name="forearm_link"/>
+  <link name="wrist_link"/>
+  <link name="gripper_link"/>
+  <link name="tip_link"/>
+
+  <!-- BASE: firmware [0, 315] -->
+  <joint name="base_yaw" type="revolute">
+    <parent link="base_link"/><child link="shoulder_link"/>
+    <origin xyz="0 0 0.0715" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-2.7489" upper="2.7489" effort="1" velocity="1"/>
+  </joint>
+
+  <!-- SHOULDER: firmware [60, 250] -->
+  <joint name="shoulder" type="revolute">
+    <parent link="shoulder_link"/><child link="upper_arm_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-1.7017" upper="1.6144" effort="1" velocity="1"/>
+  </joint>
+
+  <!-- ELBOW: firmware [75, 225] -->
+  <joint name="elbow" type="revolute">
+    <parent link="upper_arm_link"/><child link="forearm_link"/>
+    <origin xyz="0 0 0.125" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-1.4399" upper="1.1781" effort="1" velocity="1"/>
+  </joint>
+
+  <!-- WRIST PITCH: firmware [80, 230] -->
+  <joint name="wrist_pitch" type="revolute">
+    <parent link="forearm_link"/><child link="wrist_link"/>
+    <origin xyz="0 0 0.125" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-1.3526" upper="1.2654" effort="1" velocity="1"/>
+  </joint>
+
+  <!-- WRIST ROLL: firmware [0, 315] -->
+  <joint name="wrist_roll" type="revolute">
+    <parent link="wrist_link"/><child link="gripper_link"/>
+    <origin xyz="0 0 0.06" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-2.7489" upper="2.7489" effort="1" velocity="1"/>
+  </joint>
+
+  <!-- Grasp point between the fingers -->
+  <joint name="tip" type="fixed">
+    <parent link="gripper_link"/><child link="tip_link"/>
+    <origin xyz="0 0 0.13" rpy="0 0 0"/>
+  </joint>
+</robot>

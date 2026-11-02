@@ -1,57 +1,96 @@
 # Braccio++ Neuro-Symbolic Manipulation
 
-Code from the Master's thesis of **Agnese Maria Capparelli** (Sapienza Università di Roma):
-natural-language control of an Arduino Braccio++ arm through an LLM → PDDL → Fast-Forward → serial pipeline,
-with Intel RealSense D435i perception.
+Natural-language control of an Arduino Braccio++ arm through an
+LLM → PDDL → Fast-Forward → serial pipeline, with Intel RealSense D435i perception.
+Based on the Master's thesis of **Agnese Maria Capparelli** (Sapienza Università di Roma).
 
-> **Provenance.** Every file here is transcribed from the code listings in the thesis PDF.
-> Only the Arduino firmware is complete. The Python files are **fragments**. The central orchestrator
-> and several modules are not in the thesis (see "Missing components"). Function bodies are left
-> verbatim, including bugs; see [`NOTES.md`](NOTES.md).
+> **Provenance — read this first.**
+> - `firmware/` and `pddl/domain.pddl` are Agnese's code, transcribed unchanged from the thesis.
+> - `thesis_listings/` contains every other listing exactly as printed (fragments, including bugs).
+> - `braccio_ns/` is a **reconstruction** of the missing system, written from the thesis
+>   description. It is not Agnese's original code. Where it deviates from the listings,
+>   the reason is given in [`NOTES.md`](NOTES.md).
+> - It has been tested end-to-end **in simulation only**: synthetic RGB-D camera, simulated arm,
+>   and the real FF planner. All values marked `CALIBRATE` in `config/default.json` must be
+>   measured on the real setup.
 
 ## Pipeline
 
 ```
-RealSense frames ──► vision (bg subtraction + colour) ──► target_memory ──► PDDL :init
-User NL command ──► LLM (Llama 3.2 via LM Studio, T=0) ─────────────────► PDDL :goal
-domain.pddl + problem.pddl ──► FF planner (WSL) ──► plan ──► IK (IKPy) ──► serial ──► Braccio++ firmware
+RealSense ─► vision (bg subtraction, colour, top-face 3D) ─► tracker ─► target_memory ─► PDDL :init
+User NL command ─► LLM (Llama 3.2 @ LM Studio, T=0, validated) ───────────────────────► PDDL :goal
+domain.pddl + problem.pddl ─► FF ─► plan ─► reachability check ─► IK ─► serial ─► Braccio++ firmware
+                                                     └─► tracker re-synced with the new state
 ```
 
 ## Layout
 
-| Path | Thesis source | Status |
+| Path | Origin | Content |
 |---|---|---|
-| `firmware/braccio_serial/braccio_serial.ino` | Listing 3.1 | complete |
-| `pddl/domain.pddl` | Listing 3.8 | complete |
-| `pddl/problem_example.pddl` | Listing 3.9 | example |
-| `python/vision/generate_aruco_marker.py` | Listing 3.4 | complete |
-| `python/vision/detection.py` | Listings 3.6, 3.7 | functions only |
-| `python/calibration/snippets.py` | Listings 3.3, 3.5 | one-liners |
-| `python/kinematics/ik_chain.py` | Listing 3.2 | chain init only |
-| `python/planning/pddl_problem.py` | Listings 3.10, 3.11 | functions only, has bugs |
-| `python/planning/planner.py` | Listings 3.12, 3.13 | functions only |
-| `python/llm/prompt.py` | §3.5 system prompt | prompt text only |
+| `firmware/braccio_serial/` | thesis (Listing 3.1) | Serial command firmware: `HOME`, `GRIP g`, `MOVE g r p e s b` |
+| `pddl/domain.pddl` | thesis (Listing 3.8) | Blocks-world domain |
+| `thesis_listings/` | thesis | All other listings, verbatim |
+| `braccio_ns/serial_link.py` | reconstructed | pyserial client for the firmware protocol |
+| `braccio_ns/kinematics.py` | reconstructed | IK (analytic, verified with IKPy FK on the URDF) + firmware angle mapping |
+| `urdf/braccio_plusplus.urdf` | reconstructed | `braccio.urdf` was not in the thesis — **approximate** link lengths |
+| `braccio_ns/calibration.py` | reconstructed | Eye-to-hand calibration: ArUco, 33 points × 20 frames, Umeyama |
+| `braccio_ns/camera.py` | reconstructed | RealSense wrapper (depth aligned to colour) |
+| `braccio_ns/vision.py` | thesis + extended | Background subtraction, colour classification, 3D top-face localisation, tracker |
+| `braccio_ns/world.py` | reconstructed | Symbolic world model, grid cells, hidden blocks |
+| `braccio_ns/pddl.py` | thesis, fixed | Problem generation consistent with the domain; goal validation |
+| `braccio_ns/planner.py` | thesis, fixed | FF invocation (native or `wsl ./ff`) and plan parsing with arguments |
+| `braccio_ns/llm.py` | thesis prompt + reconstructed | LM Studio client, few-shot examples, validation + 1 retry |
+| `braccio_ns/executor.py` | reconstructed | MOVE → pick-and-place trajectory; whole-plan IK check before moving |
+| `braccio_ns/mission.py` | reconstructed | `start_mission` |
+| `braccio_ns/gui.py` | reconstructed | Tkinter GUI as described in §3.1 |
+| `braccio_ns/sim.py` | new | Synthetic RGB-D camera + simulated arm (FK-driven grasp/release) |
+| `tests/` | new | 14 tests: symbolic, geometry, vision, end-to-end simulated missions |
 
-## Firmware serial protocol (115200 baud)
+## Setup
 
+```bash
+pip install -r requirements.txt
+# FF planner (thesis setup: inside WSL on Windows)
+#   build FF-v2.3; on modern gcc add -fcommon to CFLAGS in the makefile
+#   put the `ff` binary in the repo root  ->  planner.command = ["wsl", "./ff"]  (default)
+#   or on Linux/macOS:                       --ff /path/to/ff
 ```
-HOME
-GRIP <angle>                      # clamped to [120, 230]
-MOVE <grip> <roll> <pitch> <elbow> <shoulder> <base>
+Flash `firmware/braccio_serial/braccio_serial.ino` with the Arduino IDE (library `Arduino_Braccio_plusplus`).
+Start LM Studio's local server with the Llama 3.2 Instruct model, and set `llm.model` to the identifier LM Studio shows.
+
+## Usage
+
+```bash
+python -m braccio_ns marker                       # print ArUco id 0 and attach it to the end-effector
+python -m braccio_ns --port COM3 calibrate        # writes config/calibration.json (RMSE printed)
+python -m braccio_ns --port COM3 gui              # full system
+python -m braccio_ns --port COM3 mission "build a tower with the red block on top" --dry-run
+python -m braccio_ns reach                        # which grid cells the arm can reach, and with which tilt
+
+# without hardware
+python -m braccio_ns --ff ./ff gui --sim
+python -m braccio_ns --ff ./ff mission "..." --sim --goal "(:goal (and (on GREEN_2 RED_4)))"
+FF_PATH=./ff pytest -q
 ```
-Requires the `Arduino_Braccio_plusplus` library (Arduino IDE).
+`--goal` bypasses the LLM, which is useful to test perception, planning and the arm on their own.
 
-## Missing components (not in the thesis)
+## Before running on the real arm (`CALIBRATE`)
 
-- `start_mission` orchestrator and plan-to-joint-angle execution
-- Tkinter (or similar) GUI described in §3.1
-- Real-time vision loop, cube ID assignment, `target_memory` population, stacking (`level`, `on_top_of`) detection
-- Full eye-to-hand calibration (33 points × 20 frames, Umeyama transform)
-- `braccio.urdf`
-- LM Studio client call and the few-shot examples
-- Serial client (pyserial) on the Python side
-- FF binary setup under WSL
+1. **URDF link lengths.** Measure base→shoulder, shoulder→elbow, elbow→wrist, and wrist→grasp point.
+2. **Angle mapping.** `robot.joint_offsets_deg` and `joint_signs` give firmware_deg = offset + sign·deg(q).
+   The defaults assume 157.5° = link straight up and the positive direction = leaning away from the base.
+   Check this joint by joint with `MOVE` commands from the serial monitor.
+3. **Gripper.** Set `grip_open_deg` and `grip_closed_deg` for the cardboard cubes.
+4. **Grid.** `grid.origin_xy`, `row_step_xy` and `col_step_xy` give the centre of `CELL_0_0` and the steps,
+   in the robot frame. Then run `reach`.
+5. **Cube size and vision thresholds.** `vision.cube_size_m`, `min_area_px`, `aspect_*`.
+6. **Marker offset.** `calibration.marker_offset_tip_m` is where the ArUco centre sits relative to the grasp point (tip frame).
 
-## Requirements
+## Known limitations
 
-Python ≥ 3.12 (the f-string in `save_problem_file` uses `"\n"` inside a replacement field), see `requirements.txt`.
+- With the placeholder geometry and the firmware joint limits, the arm cannot grasp vertically on the table.
+  IK picks the smallest feasible tilt (25–60°). Targets closer than ~0.25 m to the base are unreachable.
+- A camera in front of the arm cannot see cubes behind a stack. Those cubes are missing from `:init`.
+- There is no closed-loop replanning (thesis §5, future work). The executor works open-loop.
+  However, the whole plan is checked for reachability before the arm moves, and the tracker is
+  re-synchronised afterwards, so object IDs persist across missions.

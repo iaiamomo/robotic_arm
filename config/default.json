@@ -1,0 +1,103 @@
+{
+  "_comment": "Values marked CALIBRATE are placeholders: they must be measured on the real setup.",
+  "serial": {
+    "port": "COM3",
+    "baudrate": 115200,
+    "timeout_s": 5.0,
+    "move_settle_s": 1.5
+  },
+  "camera": {
+    "width": 640,
+    "height": 480,
+    "fps": 30
+  },
+  "vision": {
+    "diff_threshold": 50,
+    "min_area_px": 900,
+    "aspect_min": 0.6,
+    "aspect_max": 1.4,
+    "color_margin": 10,
+    "depth_patch_px": 5,
+    "cube_size_m": 0.03,
+    "stack_xy_tol_m": 0.02,
+    "track_match_tol_m": 0.03,
+    "track_min_hits": 3,
+    "track_max_misses": 15,
+    "diff_mode": "max",
+    "_comment": "Thesis values: diff on grayscale (diff_mode='gray'), aspect 0.8-1.2. Aspect depends on camera tilt (blob = top + front face)."
+  },
+  "grid": {
+    "_comment": "CALIBRATE: robot-frame centre of CELL_0_0 and unit steps along rows/cols (metres).",
+    "rows": 4,
+    "cols": 6,
+    "origin_xy": [
+      0.255,
+      -0.0875
+    ],
+    "row_step_xy": [
+      0.03,
+      0.0
+    ],
+    "col_step_xy": [
+      0.0,
+      0.035
+    ]
+  },
+  "robot": {
+    "urdf": "urdf/braccio_plusplus.urdf",
+    "_comment_angles": "CALIBRATE: firmware_deg = offset + sign * degrees(q_ik). Order: base, shoulder, elbow, wrist_pitch.",
+    "joint_offsets_deg": {
+      "base": 157.5,
+      "shoulder": 157.5,
+      "elbow": 157.5,
+      "wrist_pitch": 157.5
+    },
+    "joint_signs": {
+      "base": 1,
+      "shoulder": 1,
+      "elbow": 1,
+      "wrist_pitch": 1
+    },
+    "wrist_roll_deg": 150.0,
+    "grip_open_deg": 130.0,
+    "grip_closed_deg": 210.0,
+    "approach_height_m": 0.06,
+    "ik_tolerance_m": 0.01,
+    "home": [
+      160.0,
+      150.0,
+      157.5,
+      157.5,
+      157.5,
+      95.0
+    ]
+  },
+  "calibration": {
+    "file": "config/calibration.json",
+    "marker_id": 0,
+    "marker_offset_tip_m": [
+      0.0,
+      0.0,
+      -0.05
+    ],
+    "frames_per_point": 20,
+    "n_points": 33
+  },
+  "planner": {
+    "_comment": "On Windows (thesis setup): [\"wsl\", \"./ff\"]. On Linux/macOS: path to the ff binary.",
+    "command": [
+      "wsl",
+      "./ff"
+    ],
+    "domain_file": "pddl/domain.pddl",
+    "problem_file": "problem.pddl",
+    "timeout_s": 60
+  },
+  "llm": {
+    "base_url": "http://localhost:1234/v1",
+    "api_key": "lm-studio",
+    "model": "llama-3.2-8b-instruct",
+    "temperature": 0.0,
+    "max_retries": 1
+  }
+}

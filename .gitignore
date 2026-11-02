@@ -1,6 +1,9 @@
 __pycache__/
 *.pyc
 .venv/
+.pytest_cache/
 problem.pddl
 marker_*.png
 ff
+config/calibration.json
+config/calibration_points.npz
