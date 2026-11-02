@@ -1,0 +1,6 @@
+opencv-contrib-python>=4.7   # cv2.aruco.ArucoDetector API
+numpy
+pyrealsense2
+ikpy
+pyserial   # serial link to the Braccio++ (code not in thesis)
+openai     # OpenAI-compatible client for LM Studio (code not in thesis)
