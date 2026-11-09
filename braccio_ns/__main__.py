@@ -5,6 +5,7 @@
   python -m braccio_ns calibrate  [--sim]
   python -m braccio_ns marker     [--id 0] [--out marker_0.png]
   python -m braccio_ns reach      # IK reachability map of the grid
+  python -m braccio_ns ik CELL_1_2 [--level 2] [--above]   # MOVE command for a cell (or X Y Z in metres)
   python -m braccio_ns grip 230 120 230   # gripper test (open, close, open)
 Common: --config my.json  --ff /path/to/ff  --port COM3
 """
@@ -31,6 +32,39 @@ def cmd_marker(a):
     img = aruco.generateImageMarker(aruco.getPredefinedDictionary(aruco.DICT_4X4_50), a.id, 400)
     cv2.imwrite(a.out, img)
     print(f"Marker {a.id} saved as {a.out}")
+
+
+def cmd_ik(a):
+    """Print the MOVE command that puts the grasp point at a position (no serial needed)."""
+    import numpy as np
+
+    from .kinematics import BraccioIK, Unreachable
+    from .world import Grid
+
+    cfg = make_cfg(a)
+    r, cube = cfg["robot"], cfg["vision"]["cube_size_m"]
+    if len(a.target) == 1:
+        cell = a.target[0].upper()
+        g = Grid(cfg["grid"])
+        if cell not in g.cells():
+            raise SystemExit(f"unknown cell {cell} (valid: {g.cells()[0]} .. {g.cells()[-1]})")
+        x, y = g.center(cell)
+        z = (a.level - 0.5) * cube + (r["approach_height_m"] if a.above else 0.0)
+        what = f"{cell}, level {a.level}" + (" (approach, above)" if a.above else " (grasp)")
+    elif len(a.target) == 3:
+        x, y, z = (float(v) for v in a.target)
+        what = "point"
+    else:
+        raise SystemExit("give X Y Z in metres, or a cell name such as CELL_1_2")
+    ik = BraccioIK(r)
+    try:
+        sol = ik.solve(np.array([x, y, z]))
+    except Unreachable as e:
+        raise SystemExit(f"unreachable: {e}") from e
+    grip = r["grip_open_deg"] if a.grip is None else a.grip
+    fw = ik.q_to_firmware(sol["q"], grip)
+    print(f"{what}: x={x:.3f} y={y:.3f} z={z:.3f} m, gripper tilt {sol['tilt_deg']:.0f} deg")
+    print("MOVE " + " ".join(f"{v:.1f}" for v in fw))
 
 
 def cmd_reach(a):
@@ -124,6 +158,12 @@ def main(argv=None):
     m.add_argument("--out", default="marker_0.png")
     m.set_defaults(fn=cmd_marker)
     sub.add_parser("reach").set_defaults(fn=cmd_reach)
+    k = sub.add_parser("ik", help="MOVE command for a point (X Y Z metres) or a cell (CELL_r_c)")
+    k.add_argument("target", nargs="+")
+    k.add_argument("--level", type=int, default=1, help="stack level for a cell (1 = on the table)")
+    k.add_argument("--above", action="store_true", help="approach pose, approach_height_m higher")
+    k.add_argument("--grip", type=float, help="gripper angle (default: grip_open_deg)")
+    k.set_defaults(fn=cmd_ik)
     gr = sub.add_parser("grip", help="send GRIP commands, e.g. grip 230 120 230")
     gr.add_argument("angles", type=float, nargs="+")
     gr.set_defaults(fn=cmd_grip)
