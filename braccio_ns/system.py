@@ -3,6 +3,8 @@
 import threading
 import time
 
+import numpy as np
+
 from .calibration import CameraToRobot
 from .config import resolve
 from .executor import Executor
@@ -34,8 +36,8 @@ def default_sim_scene(cfg):
         ("RED", "CELL_0_0", 1),
         ("GREEN", "CELL_1_2", 1),
         ("BLUE", "CELL_0_4", 1),
-        ("BLUE", "CELL_2_5", 1),
-        ("RED", "CELL_2_5", 2),
+        ("BLUE", "CELL_2_4", 1),
+        ("RED", "CELL_2_4", 2),
     ]:
         x, y = g.center(cell)
         s.add(color, x, y, level)
@@ -75,10 +77,12 @@ class System:
         self.executor = Executor(cfg, self.ik, self.arm, self.grid, log)
         self.mission = Mission(cfg, self.translator, self.executor, log)
         self._stop = threading.Event()
+        self._camera_lock = threading.Lock()  # one camera reader at a time (vision loop / background / calibration)
         self._vision_thread = None
 
     def capture_background(self):
-        self.perception.update_background()
+        with self._camera_lock:
+            self.perception.update_background()
         if self.sim:
             self.camera.scene = self.scene  # cubes "placed" after the empty background
 
@@ -94,11 +98,39 @@ class System:
             self.perception.sync(res.world)
         return res
 
+    def calibrate(self):
+        """Eye-to-hand calibration, applied immediately (no restart needed). The vision loop is
+        paused meanwhile, since the calibration reads the camera itself. On hardware the result
+        is saved to calibration.file and the arm ends at HOME with the hand open."""
+        from .calibration import CameraToRobot, default_reference_points, run_calibration
+
+        cal = self.cfg["calibration"]
+        with self._camera_lock:
+            if self.sim:
+                # The ArUco marker is not rendered in simulation: fit on noisy synthetic pairs instead.
+                heights = tuple(cal.get("tip_heights_m", (0.05, 0.09, 0.13)))
+                rob = np.asarray(default_reference_points(self.cfg["grid"], cal["n_points"], heights))
+                true = self.camera.true_cam_to_robot
+                cam = true.to_camera(rob) + np.random.default_rng(0).normal(0, 0.002, rob.shape)
+                tf = CameraToRobot.fit(cam, rob)
+                self.log(f"Simulated calibration RMSE {tf.rmse * 1000:.2f} mm (not saved)")
+            else:
+                try:
+                    tf = run_calibration(self.cfg, self.camera, self.arm, self.ik, log=self.log)
+                finally:
+                    try:
+                        self.executor.home_open()
+                    except Exception as e:
+                        self.log(f"HOME after calibration failed: {e}")
+        self.perception.set_transform(tf)
+        return tf
+
     def start_vision(self, period_s=0.05):
         def loop():
             while not self._stop.is_set():
                 try:
-                    self.perception.step()
+                    with self._camera_lock:
+                        self.perception.step()
                 except Exception as e:  # keep the loop alive
                     self.log(f"vision error: {e}")
                     time.sleep(0.5)

@@ -4,6 +4,7 @@ opencv-contrib-python>=4.7
 ikpy>=3.3
 pyserial
 openai>=1.0
+up-fast-downward
 pyrealsense2
 pytest
 ruff

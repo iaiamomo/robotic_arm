@@ -16,12 +16,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: System packages
-        run: sudo apt-get update && sudo apt-get install -y flex bison libgl1
-      - name: Build FF planner (v2.3)
-        run: |
-          git clone --depth 1 https://github.com/ronuchit/FF.git /tmp/FF
-          sed -i 's/^CFLAGS.*/& -fcommon/' /tmp/FF/makefile
-          make -C /tmp/FF
+        run: sudo apt-get update && sudo apt-get install -y libgl1
       - name: Install
         run: pip install -e ".[dev]"
       - name: Lint
@@ -29,8 +24,6 @@ jobs:
           ruff check braccio_ns tests
           ruff format --check braccio_ns tests
       - name: Tests
-        env:
-          FF_PATH: /tmp/FF/ff
         run: pytest -q
 
   firmware-logic:

@@ -28,26 +28,26 @@
   },
   "grid": {
     "_comment": "CALIBRATE: robot-frame centre of CELL_0_0 and unit steps along rows/cols (metres).",
-    "rows": 4,
-    "cols": 6,
+    "rows": 3,
+    "cols": 5,
     "origin_xy": [
-      0.255,
-      -0.0875
+      0.26,
+      -0.12
     ],
     "row_step_xy": [
-      0.03,
+      0.05,
       0.0
     ],
     "col_step_xy": [
       0.0,
-      0.035
+      0.06
     ]
   },
   "robot": {
     "urdf": "urdf/braccio_plusplus.urdf",
     "_comment_angles": "CALIBRATE: firmware_deg = offset + sign * degrees(q_ik). Order: base, shoulder, elbow, wrist_pitch.",
     "joint_offsets_deg": {
-      "base": 157.5,
+      "base": 95.0,
       "shoulder": 157.5,
       "elbow": 157.5,
       "wrist_pitch": 157.5
@@ -59,8 +59,10 @@
       "wrist_pitch": 1
     },
     "wrist_roll_deg": 150.0,
-    "grip_open_deg": 130.0,
-    "grip_closed_deg": 210.0,
+    "grip_open_deg": 200.0,
+    "grip_closed_deg": 150.0,
+    "grip_release_deg": 200.0,
+    "_comment_grip": "Measured on the real Braccio++: 200 = hand fully open (HOME, approach, release), 150 = grasp. Higher = more open. Do NOT use the firmware limits (120/230): the gripper servo stalls and stops responding.",
     "approach_height_m": 0.06,
     "ik_tolerance_m": 0.01,
     "home": [
@@ -78,13 +80,21 @@
     "marker_offset_tip_m": [
       0.0,
       0.0,
-      -0.05
+      -0.1
+    ],
+    "_comment_marker": "Marker centre in the tip frame (z along the gripper, toward the fingers): measured 10 cm back from the grasp point. tip_heights_m: heights of the grasp point above the table for the calibration poses.",
+    "tip_heights_m": [
+      0.05,
+      0.09,
+      0.13
     ],
     "frames_per_point": 20,
     "n_points": 33
   },
   "planner": {
-    "_comment": "On Windows (thesis setup): [\"wsl\", \"./ff\"]. On Linux/macOS: path to the ff binary.",
+    "_comment": "backend: fast-downward (pip install up-fast-downward) or ff. command is used only by ff: [\"wsl\", \"./ff\"] on Windows (thesis setup), the ff path elsewhere.",
+    "backend": "fast-downward",
+    "search": "astar(lmcut())",
     "command": [
       "wsl",
       "./ff"
@@ -94,9 +104,10 @@
     "timeout_s": 60
   },
   "llm": {
-    "base_url": "http://localhost:1234/v1",
-    "api_key": "lm-studio",
-    "model": "llama-3.2-8b-instruct",
+    "_comment": "OpenRouter (OpenAI-compatible). The key is read from the env var named in api_key_env. For LM Studio: base_url http://localhost:1234/v1, api_key \"lm-studio\".",
+    "base_url": "https://openrouter.ai/api/v1",
+    "api_key_env": "OPENROUTER_API_KEY",
+    "model": "meta-llama/llama-3.2-3b-instruct",
     "temperature": 0.0,
     "max_retries": 1
   }

@@ -1,3 +1,4 @@
+import importlib.util
 import os
 import shutil
 import sys
@@ -17,12 +18,18 @@ def ff_path():
     return None
 
 
+def has_fast_downward():
+    return importlib.util.find_spec("up_fast_downward") is not None
+
+
 @pytest.fixture
 def cfg(tmp_path):
     over = {"planner": {"problem_file": str(tmp_path / "problem.pddl")}}
-    if ff_path():
-        over["planner"]["command"] = [ff_path()]
+    if os.environ.get("FF_PATH") and ff_path():  # opt in to the thesis planner
+        over["planner"].update(backend="ff", command=[ff_path()])
     return load_config(overrides=over)
 
 
-needs_ff = pytest.mark.skipif(ff_path() is None, reason="FF binary not found (set FF_PATH)")
+needs_planner = pytest.mark.skipif(
+    not has_fast_downward() and ff_path() is None, reason="no planner (pip install up-fast-downward, or set FF_PATH)"
+)

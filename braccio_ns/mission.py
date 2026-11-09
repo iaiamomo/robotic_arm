@@ -1,5 +1,5 @@
 """start_mission (thesis §3.4.2): perception snapshot -> PDDL init -> LLM goal ->
-problem file -> FF -> plan -> execution."""
+problem file -> planner -> plan -> execution."""
 
 from .config import resolve
 from .pddl import save_problem_file

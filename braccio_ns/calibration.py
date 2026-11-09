@@ -1,6 +1,8 @@
 """Eye-to-hand calibration (thesis §3.2.2).
 
-Procedure: the arm visits N reference points (33 in the thesis) computed with IK.
+Procedure: the arm visits N reference poses (33 in the thesis) computed with IK: the
+grasp point (tip) is spread over the grid area at safe heights above the table, and the
+marker sits wherever the gripper puts it.
 An ArUco marker (DICT_4X4_50, id 0) is attached to the end-effector. For each
 point the camera averages 20 frames: marker centre pixel -> depth -> 3D point in
 the camera frame (rs2_deproject_pixel_to_point). The robot-side point is the FK
@@ -50,6 +52,16 @@ class CameraToRobot:
         p = np.asarray(p_cam, float)
         return (self.s * (self.R @ p.T)).T + self.t
 
+    def to_camera(self, p_robot):
+        """Inverse transform: robot-frame points (N, 3) -> camera frame."""
+        p = np.asarray(p_robot, float)
+        return ((p - self.t) @ self.R) / self.s
+
+    @property
+    def is_identity(self):
+        """True for the placeholder used when no calibration file exists."""
+        return self.s == 1.0 and np.allclose(self.R, np.eye(3)) and np.allclose(self.t, 0)
+
     @classmethod
     def fit(cls, cam_pts, robot_pts, with_scale=True):
         R, t, s = umeyama(cam_pts, robot_pts, with_scale)
@@ -98,10 +110,12 @@ def run_calibration(cfg, camera, arm, ik, log=print):
     offset = np.asarray(cal["marker_offset_tip_m"], float)
     cam_pts, rob_pts = [], []
 
-    for k, target in enumerate(default_reference_points(cfg["grid"], cal["n_points"])):
-        # The marker, not the tip, must be at the target: approximate by commanding tip = target - offset
+    heights = tuple(cal.get("tip_heights_m", (0.05, 0.09, 0.13)))
+    for k, target in enumerate(default_reference_points(cfg["grid"], cal["n_points"], heights)):
+        # `target` is for the grasp point: the tip stays clear of the table. The marker offset is
+        # in the tip frame, so the marker position is taken from FK below, not from `target`.
         try:
-            sol = ik.solve(np.asarray(target) - offset)
+            sol = ik.solve(np.asarray(target))
         except Exception as e:
             log(f"[{k}] skip {target}: {e}")
             continue

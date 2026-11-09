@@ -8,6 +8,8 @@ import threading
 import cv2
 import numpy as np
 
+from .world import Grid
+
 
 def deproject_pixels(intr, us, vs, depth_m):
     """Vectorised pinhole deprojection (pixel + depth -> camera optical frame).
@@ -18,6 +20,7 @@ def deproject_pixels(intr, us, vs, depth_m):
 
 
 COLORS_BGR = {"RED": (0, 0, 255), "GREEN": (0, 200, 0), "BLUE": (255, 0, 0)}
+FONT = cv2.FONT_HERSHEY_SIMPLEX
 
 
 # ------------------------------------------------- thesis functions (Listings 3.6, 3.7)
@@ -191,6 +194,29 @@ def tracks_to_memory(tracks, cube, xy_tol):
 
 
 # ------------------------------------------------- perception loop
+def project_to_image(intr, pts_cam):
+    """Camera-frame points (N, 3) -> pixels (N, 2) with the pinhole model, plus their depth."""
+    pts = np.asarray(pts_cam, float)
+    z = pts[:, 2]
+    uv = np.stack([intr.fx * pts[:, 0] / z + intr.ppx, intr.fy * pts[:, 1] / z + intr.ppy], axis=1)
+    return uv, z
+
+
+def draw_grid(img, grid, tf, intr, color=(230, 230, 230)):
+    """Outline every grid cell on the table plane (z = 0, robot frame) and label it r_c."""
+    hr, hc = grid.row_step / 2, grid.col_step / 2
+    for cell in grid.cells():
+        c = grid.center(cell)
+        xy = [c + a * hr + b * hc for a, b in ((-1, -1), (-1, 1), (1, 1), (1, -1))] + [c]
+        uv, z = project_to_image(intr, tf.to_camera([[x, y, 0.0] for x, y in xy]))
+        if (z <= 0).any():
+            continue
+        cv2.polylines(img, [np.round(uv[:4]).astype(np.int32)], True, color, 1, cv2.LINE_AA)
+        label = cell.removeprefix("CELL_")
+        (tw, th), _ = cv2.getTextSize(label, FONT, 0.35, 1)
+        cv2.putText(img, label, (int(uv[4, 0] - tw / 2), int(uv[4, 1] + th / 2)), FONT, 0.35, color, 1, cv2.LINE_AA)
+
+
 class Perception:
     def __init__(self, cfg, camera, cam_to_robot):
         self.v = cfg["vision"]
@@ -202,8 +228,9 @@ class Perception:
             self.v["track_max_misses"],
             cube=self.v["cube_size_m"],
         )
+        self.grid = Grid(cfg["grid"])
         self.lock = threading.Lock()
-        self.last_frame, self.last_dets = None, []
+        self.last_frame, self.last_dets, self.last_intr = None, [], None
 
     def update_background(self, n=10):
         """Average n frames of the empty workspace (GUI 'Update background')."""
@@ -218,6 +245,8 @@ class Perception:
     def step(self):
         frame = self.camera.get_frames()
         if self.background is None:
+            with self.lock:  # keep the live preview running before the background is captured
+                self.last_frame, self.last_dets, self.last_intr = frame["color"], [], frame["intrinsics"]
             return []
         mask, _ = get_mask_from_frames(
             self.background, frame["color"], self.v["diff_threshold"], self.v.get("diff_mode", "max")
@@ -237,7 +266,7 @@ class Perception:
         dets = drop_occluded(dets, self.v["cube_size_m"])
         with self.lock:
             self.tracker.update(dets)
-            self.last_frame, self.last_dets = frame["color"], dets
+            self.last_frame, self.last_dets, self.last_intr = frame["color"], dets, frame["intrinsics"]
         return dets
 
     def localize(self, frame, contour, top_band=0.006):
@@ -266,15 +295,33 @@ class Perception:
         with self.lock:
             self.tracker.sync(ws)
 
+    def set_transform(self, cam_to_robot):
+        """Use a new camera->robot calibration; tracks are reset since every position changes."""
+        with self.lock:
+            self.tf = cam_to_robot
+            self.tracker.reset()
+
     def target_memory(self):
         with self.lock:
             return tracks_to_memory(self.tracker.confirmed(), self.v["cube_size_m"], self.v["stack_xy_tol_m"])
 
-    def overlay(self):
+    def overlay(self, show_grid=False):
         with self.lock:
             if self.last_frame is None:
                 return None
             img = self.last_frame.copy()
+            if show_grid:
+                if self.tf.is_identity:
+                    msg = "Grid: no calibration, run calibrate"
+                    y = img.shape[0] - 12
+                    cv2.putText(img, msg, (10, y), FONT, 0.5, (0, 0, 0), 3)
+                    cv2.putText(img, msg, (10, y), FONT, 0.5, (0, 255, 255), 1)
+                else:
+                    draw_grid(img, self.grid, self.tf, self.last_intr)
+            if self.background is None:
+                msg = "No background: press Update Background"
+                cv2.putText(img, msg, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 0), 3)
+                cv2.putText(img, msg, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 255), 1)
             tracks = {t.id: t for t in self.tracker.confirmed()}
             for d in self.last_dets:
                 x, y, w, h = d["bbox"]

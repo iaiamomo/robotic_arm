@@ -1,11 +1,14 @@
 """Natural language -> PDDL goal (thesis §3.5).
 
-Llama 3.2 served by LM Studio through its OpenAI-compatible endpoint, temperature 0,
+Llama 3.2 through an OpenAI-compatible endpoint (OpenRouter by default; the thesis used
+LM Studio, still selectable via `llm.base_url`), temperature 0,
 a fresh conversation per request. The system prompt is the thesis prompt; the
 few-shot examples (mentioned in the thesis but not printed) are reconstructed.
 Added: the reply is validated against the known identifiers and, on failure,
 the model gets one corrective retry (`max_retries`).
 """
+
+import os
 
 from .config import resolve
 from .pddl import GoalError, extract_goal, validate_goal
@@ -14,7 +17,7 @@ SYSTEM_PROMPT = """You are a PDDL expert. Given my request and a domain, you mus
 IMPORTANT RULES:
 - Use ONLY the provided identifiers and write all IDs in UPPERCASE (e.g., HIDDEN_UNDER_RED_5).
 - If I ask to put one block on top of another, use: (on BLOCK_A BLOCK_B).
-- If I ask to position a block on the table or in a specific zone, use: (on BLOCK_A CELL_r_c), where r is the row and c the column of the grid (e.g. "cell 0_5" is CELL_0_5).
+- If I ask to position a block on the table or in a specific zone, use: (on BLOCK_A CELL_r_c), where r is the row and c the column of the grid (e.g. "cell 0_4" is CELL_0_4).
 - If I ask to build a TOWER, stack the blocks one on top of the other using one of the blocks as a base, for example: (on BLOCK_A BLOCK_B).
 - Every goal must start with (:goal (and and end with )).
 - The ONLY predicate allowed for the goal is the on predicate.
@@ -62,6 +65,17 @@ def build_messages(request, ws, grid, domain_text):
     return msgs
 
 
+def api_key(llm_cfg):
+    """Explicit `api_key` wins (e.g. "lm-studio"); otherwise read the env var named by `api_key_env`."""
+    if llm_cfg.get("api_key"):
+        return llm_cfg["api_key"]
+    env = llm_cfg.get("api_key_env", "OPENROUTER_API_KEY")
+    key = os.environ.get(env)
+    if not key:
+        raise RuntimeError(f"No LLM API key: set the {env} environment variable (or llm.api_key in the config)")
+    return key
+
+
 class LLMGoalTranslator:
     def __init__(self, llm_cfg, domain_file, client=None):
         self.cfg = llm_cfg
@@ -69,7 +83,7 @@ class LLMGoalTranslator:
         if client is None:
             from openai import OpenAI
 
-            client = OpenAI(base_url=llm_cfg["base_url"], api_key=llm_cfg.get("api_key", "lm-studio"))
+            client = OpenAI(base_url=llm_cfg["base_url"], api_key=api_key(llm_cfg))
         self.client = client
 
     def _ask(self, messages):

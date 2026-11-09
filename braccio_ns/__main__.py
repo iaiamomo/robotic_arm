@@ -5,19 +5,20 @@
   python -m braccio_ns calibrate  [--sim]
   python -m braccio_ns marker     [--id 0] [--out marker_0.png]
   python -m braccio_ns reach      # IK reachability map of the grid
+  python -m braccio_ns grip 230 120 230   # gripper test (open, close, open)
 Common: --config my.json  --ff /path/to/ff  --port COM3
 """
 
 import argparse
 import sys
 
-from .config import load_config
+from .config import load_config, load_dotenv
 
 
 def make_cfg(a):
     over = {}
     if getattr(a, "ff", None):
-        over.setdefault("planner", {})["command"] = [a.ff]
+        over.setdefault("planner", {}).update(backend="ff", command=[a.ff])
     if getattr(a, "port", None):
         over.setdefault("serial", {})["port"] = a.port
     return load_config(a.config, over)
@@ -59,25 +60,26 @@ def cmd_reach(a):
 
 
 def cmd_calibrate(a):
-    from .calibration import run_calibration
     from .system import System
 
-    cfg = make_cfg(a)
-    s = System(cfg, sim=a.sim, goal="(:goal (and))")
-    if a.sim:
-        # In simulation the ArUco marker is not rendered: fit on noisy synthetic pairs instead.
-        import numpy as np
+    s = System(make_cfg(a), sim=a.sim, goal="(:goal (and))")
+    try:
+        s.calibrate()
+    finally:
+        s.shutdown()
 
-        from .calibration import CameraToRobot, default_reference_points
 
-        rob = np.asarray(default_reference_points(cfg["grid"], cfg["calibration"]["n_points"]))
-        true = s.camera.true_cam_to_robot
-        cam = (true.R.T @ (rob - true.t).T).T + np.random.default_rng(0).normal(0, 0.002, rob.shape)
-        tf = CameraToRobot.fit(cam, rob)
-        print(f"Simulated calibration RMSE {tf.rmse * 1000:.2f} mm")
-        return
-    run_calibration(cfg, s.camera, s.arm, s.ik)
-    s.shutdown()
+def cmd_grip(a):
+    """Gripper test without the GUI (close the Arduino serial monitor first)."""
+    from .serial_link import BraccioSerial
+
+    s = make_cfg(a)["serial"]
+    arm = BraccioSerial(s["port"], s["baudrate"], s["timeout_s"], s["move_settle_s"])
+    try:
+        for g in a.angles:
+            print(f"GRIP {g:.1f} -> {arm.grip(g)}")
+    finally:
+        arm.close()
 
 
 def cmd_mission(a):
@@ -110,9 +112,10 @@ def cmd_gui(a):
 
 
 def main(argv=None):
+    load_dotenv()  # e.g. OPENROUTER_API_KEY
     p = argparse.ArgumentParser(prog="braccio_ns")
     p.add_argument("--config")
-    p.add_argument("--ff", help="path to the FF binary (overrides planner.command)")
+    p.add_argument("--ff", help="use the FF binary at this path instead of Fast Downward")
     p.add_argument("--port", help="serial port of the Braccio++")
     sub = p.add_subparsers(dest="cmd", required=True)
 
@@ -121,6 +124,9 @@ def main(argv=None):
     m.add_argument("--out", default="marker_0.png")
     m.set_defaults(fn=cmd_marker)
     sub.add_parser("reach").set_defaults(fn=cmd_reach)
+    gr = sub.add_parser("grip", help="send GRIP commands, e.g. grip 230 120 230")
+    gr.add_argument("angles", type=float, nargs="+")
+    gr.set_defaults(fn=cmd_grip)
     c = sub.add_parser("calibrate")
     c.add_argument("--sim", action="store_true")
     c.set_defaults(fn=cmd_calibrate)

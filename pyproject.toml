@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "braccio-ns"
 version = "0.1.0"
-description = "Neuro-symbolic natural-language control of an Arduino Braccio++ (LLM -> PDDL -> FF -> IK)"
+description = "Neuro-symbolic natural-language control of an Arduino Braccio++ (LLM -> PDDL -> planner -> IK)"
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "Agnese Maria Capparelli" }, { name = "Flavia Monti", email = "monti@diag.uniroma1.it" }]
@@ -15,6 +15,7 @@ dependencies = [
   "ikpy>=3.3",
   "pyserial",
   "openai>=1.0",
+  "up-fast-downward",
 ]
 
 [project.optional-dependencies]

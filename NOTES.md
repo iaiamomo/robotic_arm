@@ -25,7 +25,9 @@ They need checking against Agnese's real source. All of them are resolved in `br
 
 | Topic | Choice | Why |
 |---|---|---|
-| Table positions | `CELL_r_c` objects of type `cell`; on table = `(on X CELL_r_c)` | Matches the thesis domain unchanged, and the prompt's `cell_n_n` |
+| Table positions | `CELL_r_c` objects of type `cell`; on table = `(on X CELL_r_c)` | Matches the thesis domain, and the prompt's `cell_n_n` |
+| Planner | Fast Downward (`up-fast-downward`, `astar(lmcut())`) by default; FF still selectable (`planner.backend`) | Prebuilt for Windows, no WSL or compiler; optimal plans = fewest arm moves |
+| Domain types | `(either block cell)` replaced by a supertype `support` (`block cell - support`) | Fast Downward rejects `either` in action parameters; same set of valid plans |
 | Hidden blocks | `HIDDEN_UNDER_<ID>`, colour `MYSTERY`, one per missing level | Thesis convention (Listings 3.9/3.10) |
 | IK | Closed-form planar solution, verified with IKPy FK on the URDF | IKPy's numerical solver got stuck in local minima (inconsistent results on adjacent cells) |
 | Grasp orientation | Smallest feasible tilt from vertical | A vertical grasp is infeasible within the firmware joint limits for the assumed link lengths |
@@ -34,17 +36,17 @@ They need checking against Agnese's real source. All of them are resolved in `br
 | 3D position | Deproject all blob pixels and take the mean of the top-face points | The 2D centroid of top + front face sits near the front edge, an error of about half a cube toward the camera |
 | Covered cubes | A component under another (xy overlap, lower top) is dropped | Its side face would otherwise create a spurious block; the cube becomes `HIDDEN_UNDER_*` |
 | Tracking | Per-colour nearest neighbour, min hits 3, max misses 15; occluded tracks do not age; tracks are re-synced after execution | Addresses ID flickering (thesis §5) |
-| LLM output | `(:goal ...)` extracted, then validated: only `on`, only known IDs, at most one block per support; 1 corrective retry | Makes "translation failed" explicit instead of failing in FF |
+| LLM output | `(:goal ...)` extracted, then validated: only `on`, only known IDs, at most one block per support; 1 corrective retry | Makes "translation failed" explicit instead of failing in the planner |
 | Execution | Whole plan simulated and IK-checked before the first movement | The thesis reports failures from unreachable placements (§4.3) |
-| FF on Windows | Runs from the repo root with relative POSIX paths, so `wsl ./ff` works | As in the thesis setup |
+| FF on Windows (optional backend) | Runs from the repo root with relative POSIX paths, so `wsl ./ff` works | As in the thesis setup |
 
 ## C. What the simulation does and does not validate
 
-Validated: the data flow and consistency of all modules, PDDL generated from perception, FF plans,
+Validated: the data flow and consistency of all modules, PDDL generated from perception, planner output,
 IK/FK round-trips within firmware limits, and the physical outcome of the plan as re-observed by the synthetic camera.
 
 Not validated:
 - real optics, lighting and depth noise;
 - link lengths, angle offsets and directions, and gripper values of the real Braccio++;
 - the timing of `move_settle_s`;
-- the real LM Studio model's output quality (only a mocked client is tested).
+- the real LLM's output quality (OpenRouter / LM Studio) (only a mocked client is tested).

@@ -118,7 +118,8 @@ class SimArm:
 
     def __init__(self, ik, scene, robot_cfg, grasp_tol=0.012):
         self.ik, self.scene, self.cfg, self.tol = ik, scene, robot_cfg, grasp_tol
-        self.held, self.log, self.grip = None, [], robot_cfg["home"][0]
+        self.held, self.log, self.grip_deg = None, [], robot_cfg["home"][0]
+        self.last_fw = list(robot_cfg["home"])
         self.closed_thr = (robot_cfg["grip_open_deg"] + robot_cfg["grip_closed_deg"]) / 2
 
     def _closed(self, g):
@@ -127,7 +128,7 @@ class SimArm:
     def move(self, fw):
         self.log.append("MOVE " + " ".join(f"{a:.1f}" for a in fw))
         tip = self.ik.fk_firmware(fw)[:3, 3]
-        was_closed, now_closed = self._closed(self.grip), self._closed(fw[0])
+        was_closed, now_closed = self._closed(self.grip_deg), self._closed(fw[0])
         if self.held is not None:
             self.held["xyz"] = tip.copy()
         if now_closed and not was_closed:
@@ -141,18 +142,21 @@ class SimArm:
                 tip[:2] = below["xyz"][:2]  # cube self-centres on the one below
             self.held["xyz"] = np.array([tip[0], tip[1], base + self.scene.cube / 2])
             self.held = None
-        self.grip = fw[0]
+        self.grip_deg, self.last_fw = fw[0], list(fw)
         return "OK"
 
-    def grip_to(self, g):
-        fw = list(self.cfg["home"])
-        fw[0] = g
-        return self.move(fw)
+    def grip(self, g):
+        """GRIP command: only the gripper moves, the other joints stay where they are."""
+        n = len(self.log)
+        self.move([g] + self.last_fw[1:])
+        self.log[n] = f"GRIP {g:.1f}"
+        return "OK"
 
     def home(self):
         self.log.append("HOME")
+        self.last_fw = list(self.cfg["home"])
         if self.held is None:
-            self.grip = self.cfg["home"][0]
+            self.grip_deg = self.cfg["home"][0]
         return "OK"
 
     def close(self):

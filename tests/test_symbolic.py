@@ -1,13 +1,13 @@
 import pytest
 
 from braccio_ns.pddl import GoalError, extract_goal, problem_init, save_problem_file, validate_goal
-from braccio_ns.planner import GoalAlreadyTrue, PlannerError, parse_ff_output, run_planner
+from braccio_ns.planner import GoalAlreadyTrue, PlannerError, parse_ff_output, parse_sas_plan, run_planner
 from braccio_ns.world import Grid, build_world_state
-from conftest import needs_ff
+from conftest import needs_planner
 
 MEM = {
-    "RED_5": {"color": "red", "pos": [0.315, -0.0175, 0.06], "level": 2, "on_top_of": "HIDDEN_UNDER_RED_5"},
-    "GREEN_10": {"color": "green", "pos": [0.285, 0.0525, 0.03], "level": 1, "on_top_of": None},
+    "RED_5": {"color": "red", "pos": [0.36, 0.0, 0.06], "level": 2, "on_top_of": "HIDDEN_UNDER_RED_5"},
+    "GREEN_10": {"color": "green", "pos": [0.31, 0.12, 0.03], "level": 1, "on_top_of": None},
 }
 
 
@@ -73,7 +73,7 @@ def test_parse_ff_output_keeps_arguments():
         parse_ff_output("ff: goal can be simplified to FALSE. No plan will solve it")
 
 
-@needs_ff
+@needs_planner
 def test_ff_solves_generated_problem(cfg, tmp_path):
     ws, g = world(cfg)
     goal = "(:goal (and (on GREEN_10 HIDDEN_UNDER_RED_5) (on RED_5 GREEN_10)))"
@@ -84,3 +84,23 @@ def test_ff_solves_generated_problem(cfg, tmp_path):
         assert ws.blocks[b].support == frm
         ws.apply_move(b, tgt, g)
     assert ws.holds([("GREEN_10", "HIDDEN_UNDER_RED_5"), ("RED_5", "GREEN_10")])
+
+
+def test_parse_sas_plan():
+    text = "(move red_5 hidden_under_red_5 cell_0_0)\n(move green_10 cell_1_4 red_5)\n; cost = 2 (unit cost)\n"
+    assert parse_sas_plan(text) == [
+        ("MOVE", ["RED_5", "HIDDEN_UNDER_RED_5", "CELL_0_0"]),
+        ("MOVE", ["GREEN_10", "CELL_1_4", "RED_5"]),
+    ]
+    assert parse_sas_plan("; cost = 0 (unit cost)\n") == []
+
+
+@needs_planner
+def test_planner_goal_already_true_and_unsolvable(cfg):
+    ws, g = world(cfg)
+    save_problem_file(cfg["planner"]["problem_file"], ws, g, "(:goal (and (on RED_5 HIDDEN_UNDER_RED_5)))")
+    assert run_planner(cfg["planner"]) == []
+    # a block can never be on itself: the move action forbids ?b = ?target
+    save_problem_file(cfg["planner"]["problem_file"], ws, g, "(:goal (and (on RED_5 RED_5)))")
+    with pytest.raises(PlannerError, match="unreachable"):
+        run_planner(cfg["planner"])

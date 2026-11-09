@@ -1,19 +1,21 @@
-; Blocks World domain — Listing 3.8
+; Blocks World domain — Listing 3.8, with `(either block cell)` replaced by the
+; equivalent supertype `support` (Fast Downward does not accept `either` in parameters).
 (define (domain cardboard_block_world)
   (:requirements :strips :typing :equality)
 
   (:types
-    block color cell
+    support color - object
+    block cell - support
   )
 
   (:predicates
     (has_color ?x - block ?c - color)
-    (on ?b1 - block ?s - (either block cell))
-    (clear ?x - (either block cell))
+    (on ?b1 - block ?s - support)
+    (clear ?x - support)
   )
 
   (:action move
-    :parameters (?b - block ?from - (either block cell) ?target - (either block cell))
+    :parameters (?b - block ?from - support ?target - support)
     :precondition (and
       (on ?b ?from)
       (clear ?b)

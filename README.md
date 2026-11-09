@@ -10,15 +10,15 @@ Based on the Master's thesis of **Agnese Maria Capparelli** (Sapienza Universit�
 >   Python code, so this package is a re-implementation, not Agnese's original source.
 >   [`NOTES.md`](NOTES.md) lists the issues found in the printed listings and every design choice.
 > - It has been tested end-to-end **in simulation only**: synthetic RGB-D camera, simulated arm,
->   and the real FF planner. All values marked `CALIBRATE` in `config/default.json` must be
+>   and a real PDDL planner (Fast Downward). All values marked `CALIBRATE` in `config/default.json` must be
 >   measured on the real setup.
 
 ## Pipeline
 
 ```
 RealSense ─► vision (bg subtraction, colour, top-face 3D) ─► tracker ─► target_memory ─► PDDL :init
-User NL command ─► LLM (Llama 3.2 @ LM Studio, T=0, validated) ───────────────────────► PDDL :goal
-domain.pddl + problem.pddl ─► FF ─► plan ─► reachability check ─► IK ─► serial ─► Braccio++ firmware
+User NL command ─► LLM (Llama 3.2 @ OpenRouter, T=0, validated) ───────────────────────► PDDL :goal
+domain.pddl + problem.pddl ─► Fast Downward ─► plan ─► reachability check ─► IK ─► serial ─► Braccio++ firmware
                                                      └─► tracker re-synced with the new state
 ```
 
@@ -36,8 +36,8 @@ domain.pddl + problem.pddl ─► FF ─► plan ─► reachability check ─�
 | `braccio_ns/vision.py` | thesis + extended | Background subtraction, colour classification, 3D top-face localisation, tracker |
 | `braccio_ns/world.py` | reconstructed | Symbolic world model, grid cells, hidden blocks |
 | `braccio_ns/pddl.py` | thesis, fixed | Problem generation consistent with the domain; goal validation |
-| `braccio_ns/planner.py` | thesis, fixed | FF invocation (native or `wsl ./ff`) and plan parsing with arguments |
-| `braccio_ns/llm.py` | thesis prompt + reconstructed | LM Studio client, few-shot examples, validation + 1 retry |
+| `braccio_ns/planner.py` | thesis, fixed | Fast Downward (default) or FF (`wsl ./ff`) invocation, plan parsing with arguments |
+| `braccio_ns/llm.py` | thesis prompt + reconstructed | OpenAI-compatible client (OpenRouter), few-shot examples, validation + 1 retry |
 | `braccio_ns/executor.py` | reconstructed | MOVE → pick-and-place trajectory; whole-plan IK check before moving |
 | `braccio_ns/mission.py` | reconstructed | `start_mission` |
 | `braccio_ns/gui.py` | reconstructed | Tkinter GUI as described in §3.1 |
@@ -45,20 +45,28 @@ domain.pddl + problem.pddl ─► FF ─► plan ─► reachability check ─�
 | `tests/` | new | Python tests (symbolic, geometry, vision, end-to-end missions) + host-compiled firmware parser tests |
 
 ## Setup
+Python 3.14 max
 
 ```bash
 pip install -e ".[realsense]"        # or: pip install -r requirements.txt
-# FF planner (thesis setup: inside WSL on Windows)
-#   build FF-v2.3; on modern gcc add -fcommon to CFLAGS in the makefile
-#   put the `ff` binary in the repo root  ->  planner.command = ["wsl", "./ff"]  (default)
-#   or on Linux/macOS:                       --ff /path/to/ff
+# Planner: Fast Downward comes with the `up-fast-downward` dependency (prebuilt, also on Windows).
+# Optional, thesis setup: FF-v2.3 (on modern gcc add -fcommon to CFLAGS in the makefile), then
+#   --ff /path/to/ff   or   planner.backend = "ff", planner.command = ["wsl", "./ff"]
 ```
 Flash `firmware/braccio_serial/braccio_serial.ino` with the Arduino IDE (library `Arduino_Braccio_plusplus`).
-Start LM Studio's local server with the Llama 3.2 Instruct model, and set `llm.model` to the identifier LM Studio shows.
+LLM: [OpenRouter](https://openrouter.ai) with `meta-llama/llama-3.2-3b-instruct` (`llm.model`). Create a key and put it in a `.env` file in the repo root (git-ignored, loaded at startup), or set it in the shell:
+```
+OPENROUTER_API_KEY=sk-or-...               # .env
+$env:OPENROUTER_API_KEY = "sk-or-..."      # PowerShell (setx OPENROUTER_API_KEY "sk-or-..." to make it permanent)
+export OPENROUTER_API_KEY=sk-or-...        # bash
+```
+To use LM Studio as in the thesis instead, override `llm.base_url` with `http://localhost:1234/v1`, `llm.api_key` with `"lm-studio"` and `llm.model` with the identifier LM Studio shows.
 
 ## Usage
 
 ```bash
+.venv\Scripts\activate                            # Windows
+
 python -m braccio_ns marker                       # print ArUco id 0 and attach it to the end-effector
 python -m braccio_ns --port COM3 calibrate        # writes config/calibration.json (RMSE printed)
 python -m braccio_ns --port COM3 gui              # full system
@@ -66,9 +74,9 @@ python -m braccio_ns --port COM3 mission "build a tower with the red block on to
 python -m braccio_ns reach                        # which grid cells the arm can reach, and with which tilt
 
 # without hardware
-python -m braccio_ns --ff ./ff gui --sim
-python -m braccio_ns --ff ./ff mission "..." --sim --goal "(:goal (and (on GREEN_2 RED_4)))"
-FF_PATH=./ff pytest -q
+python -m braccio_ns gui --sim
+python -m braccio_ns mission "..." --sim --goal "(:goal (and (on GREEN_2 RED_4)))"
+pytest -q
 ```
 `--goal` bypasses the LLM, which is useful to test perception, planning and the arm on their own.
 After `pip install -e .`, the `braccio-ns` command can be used instead of `python -m braccio_ns`.
@@ -78,11 +86,10 @@ After `pip install -e .`, the `braccio-ns` command can be used instead of `pytho
 ```bash
 pip install -e ".[dev]"
 ruff check braccio_ns tests && ruff format --check braccio_ns tests
-FF_PATH=/path/to/ff pytest -q       # tests that need FF are skipped without it
+pytest -q                           # FF_PATH=/path/to/ff runs the planner tests with FF instead
 tests/firmware/run_tests.sh         # firmware command parser, compiled with g++ against mocks
 ```
 GitHub Actions (`.github/workflows/ci.yml`) runs the following on every push:
-- builds FF;
 - runs lint and the tests on Python 3.10 and 3.12;
 - runs the firmware parser tests;
 - compiles the sketch for the Braccio++ board (`arduino:mbed_nano:nanorp2040connect`).
