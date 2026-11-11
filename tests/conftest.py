@@ -24,8 +24,14 @@ def has_fast_downward():
 
 @pytest.fixture
 def cfg(tmp_path):
-    over = {"planner": {"problem_file": str(tmp_path / "problem.pddl")}}
-    if os.environ.get("FF_PATH") and ff_path():  # opt in to the thesis planner
+    # The tests run on a nominal setup (no droop, 3 cm cubes grasped at the centre), not on the
+    # values measured on the real arm and cubes in default.json: `reach` shows what the real setup can do.
+    over = {
+        "planner": {"problem_file": str(tmp_path / "problem.pddl")},
+        "robot": {"droop_m": [], "grasp_below_center_m": 0.0},
+        "vision": {"cube_size_m": 0.03},
+    }
+    if os.environ.get("FF_PATH") and ff_path():  # opt in to the FF planner
         over["planner"].update(backend="ff", command=[ff_path()])
     return load_config(overrides=over)
 

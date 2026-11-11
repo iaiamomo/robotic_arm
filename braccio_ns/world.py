@@ -2,7 +2,7 @@
 
 Blocks are identified as <COLOR>_<n> (e.g. RED_5). A block seen at level >= 2
 with no visible block underneath gets a hidden support HIDDEN_UNDER_<ID> of
-colour MYSTERY (thesis Listing 3.9/3.10 convention). Table positions are the
+colour MYSTERY. Table positions are the
 grid cells CELL_<row>_<col> (the cell_n_n identifiers in the LLM prompt).
 """
 

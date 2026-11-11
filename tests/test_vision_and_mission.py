@@ -192,6 +192,17 @@ def test_manual_pick_grasps_the_cube(cfg):
     assert build_world_state(mem2, s.grid, cfg["vision"]["cube_size_m"]).stack_cell(green) == "CELL_2_0"
 
 
+def test_grasp_below_center_lowers_pick_and_place(cfg):
+    cfg["robot"]["grasp_below_center_m"] = 0.01
+    s = boot(cfg)
+    mem, ws, base = by_cell(s)
+    red = base["CELL_0_0"]
+    poses = dict(s.executor.pick_place_poses(ws, red, "CELL_1_0"))
+    z = {k: s.ik.fk_firmware(poses[k])[2, 3] for k in ("descend", "lower")}
+    assert abs(z["descend"] - (ws.grasp_point(red)[2] - 0.01)) < 1e-6
+    assert abs(z["lower"] - (ws.place_point("CELL_1_0", s.grid)[2] - 0.01)) < 1e-6
+
+
 def test_manual_pick_unreachable_does_not_move(cfg):
     from braccio_ns.executor import ExecutionError
 

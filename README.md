@@ -10,12 +10,35 @@ Based on the Master's thesis of **Agnese Maria Capparelli** (Sapienza Universit�
 
 ## Requirements
 
-- **Python 3.10 – 3.14. Python 3.14 is the maximum: do not use 3.15 or newer.** `pyproject.toml` enforces
-  this (`requires-python = ">=3.10,<3.15"`), so `pip install` refuses newer interpreters.
-- Arduino Braccio++ flashed with `firmware/braccio_serial/braccio_serial.ino`
-  (Arduino IDE, library `Arduino_Braccio_plusplus`).
-- Intel RealSense D435i.
-- An [OpenRouter](https://openrouter.ai) API key for the LLM (or a local LM Studio server).
+**Python 3.10 – 3.14. Python 3.14 is the maximum: do not use 3.15 or newer.** `pyproject.toml` enforces
+this (`requires-python = ">=3.10,<3.15"`), so `pip install` refuses newer interpreters.
+
+### Hardware
+
+- Arduino Braccio++ (Arduino Nano RP2040 Connect on the Braccio carrier), connected by USB.
+- Intel RealSense D435i, connected to a **USB 3** port.
+- ArUco marker (printed with `python -m braccio_ns marker`) attached to the gripper, for the calibration.
+
+### Software to install
+
+| Software | Needed for | Notes |
+|---|---|---|
+| [Python 3.10 – 3.14](https://www.python.org/downloads/) | everything | On Windows tick *Add python.exe to PATH*; `py -3.14` must work in a terminal. |
+| [Git](https://git-scm.com/downloads) | cloning the repository | |
+| [Arduino IDE 2](https://www.arduino.cc/en/software) | flashing the firmware | Boards Manager: **Arduino Mbed OS Nano Boards**. Library Manager: **Arduino_Braccio_plusplus** (choose *Install all* for its dependencies). |
+| [Intel RealSense SDK 2.0](https://github.com/IntelRealSense/librealsense/releases) (includes **RealSense Viewer**) | checking the camera | The Python code uses the `pyrealsense2` pip package, so the SDK is not strictly required, but the Viewer is the quickest way to check the camera, the USB 3 link and to update the camera firmware. |
+| An [OpenRouter](https://openrouter.ai) account and API key | the LLM | Alternatively [LM Studio](https://lmstudio.ai) with a Llama 3.2 Instruct model, running locally. |
+
+Installed automatically by `pip` (see `pyproject.toml`): numpy, OpenCV (contrib, for ArUco), IKPy, pyserial,
+openai, Fast Downward (`up-fast-downward`), and `pyrealsense2` with the `[realsense]` extra.
+
+Optional:
+
+- **WSL + gcc**, only to use the FF planner instead of Fast Downward.
+- **g++**, only to run the firmware parser tests (`tests/firmware/run_tests.sh`).
+
+Only one program at a time can use each device: close the Arduino serial monitor before using COM3, and
+close RealSense Viewer before starting the GUI.
 
 ## Pipeline
 
@@ -50,9 +73,17 @@ domain.pddl + problem.pddl ─► Fast Downward ─► plan ─► reachability 
 
 ## Setup
 
-Create the virtual environment with Python 3.14 (or any version from 3.10 to 3.14):
+**1. Firmware.** Open `firmware/braccio_serial/braccio_serial.ino` in the Arduino IDE, select the board
+*Arduino Nano RP2040 Connect* and its port, and upload. In the serial monitor (115200 baud, *Newline*) the
+board prints `Braccio++ ready`. `test_movimenti.md` explains the commands for moving the arm by hand.
+
+**2. Camera.** Plug the D435i into a USB 3 port and check it in RealSense Viewer (colour and depth streams),
+then close the Viewer.
+
+**3. Python environment.** Create it with Python 3.14 (or any version from 3.10 to 3.14):
 
 ```bash
+git clone https://github.com/iaiamomo/robotic_arm.git && cd robotic_arm
 py -3.14 -m venv .venv                     # Windows   (Linux/macOS: python3.14 -m venv .venv)
 .venv\Scripts\activate                     # Windows   (Linux/macOS: source .venv/bin/activate)
 pip install -e ".[realsense]"              # or: pip install -r requirements.txt
@@ -69,8 +100,15 @@ OPENROUTER_API_KEY=sk-or-...               # .env
 $env:OPENROUTER_API_KEY = "sk-or-..."      # PowerShell (setx OPENROUTER_API_KEY "sk-or-..." to make it permanent)
 export OPENROUTER_API_KEY=sk-or-...        # bash
 ```
-To use a local LM Studio server instead, set `llm.base_url` to `http://localhost:1234/v1`, `llm.api_key`
-to `"lm-studio"` and `llm.model` to the identifier LM Studio shows.
+**LLM with LM Studio instead of OpenRouter** (local, no API key):
+1. Install [LM Studio](https://lmstudio.ai) and download a *Llama 3.2 Instruct* model (e.g. `llama-3.2-3b-instruct`).
+2. In the *Developer* tab load the model and start the server (default `http://localhost:1234`).
+3. Check that `llm.model` in `config/lmstudio.json` matches the model identifier shown by LM Studio.
+4. Add `--config config/lmstudio.json` to every command, e.g.
+   `python -m braccio_ns --config config/lmstudio.json --port COM3 gui`.
+
+`config/lmstudio.json` only overrides the `llm` section of `config/default.json`. LM Studio must stay open
+with the server running while you use the program.
 
 ## Usage
 
@@ -90,7 +128,6 @@ pytest -q
 ```
 `--goal` bypasses the LLM, which is useful to test perception, planning and the arm on their own.
 After `pip install -e .`, the `braccio-ns` command can be used instead of `python -m braccio_ns`.
-Only one program at a time can open the serial port: close the Arduino serial monitor first.
 
 ### GUI
 
@@ -127,21 +164,27 @@ GitHub Actions (`.github/workflows/ci.yml`) runs the following on every push:
 ## Before running on the real arm (`CALIBRATE`)
 
 1. **URDF link lengths.** Measure base→shoulder, shoulder→elbow, elbow→wrist, and wrist→grasp point.
+   z = 0 is the table where the cubes rest: the first length (`base_yaw`) goes from that table to the
+   shoulder axis, including any platform under the arm (currently 7.15 + 2.4 cm).
    They decide how far the arm reaches (see `reach`).
 2. **Angle mapping.** `robot.joint_offsets_deg` and `joint_signs` give firmware_deg = offset + sign·deg(q).
    The base offset is 95°, the base angle of HOME, so HOME points along the grid's centre column.
    The other joints assume 157.5° = link straight up. Check joint by joint with `MOVE` commands.
-3. **Gripper.** Measured: `grip_open_deg` = `grip_release_deg` = 200 (fully open), `grip_closed_deg` = 150.
+3. **Droop.** Far from the base the real arm ends up lower than the model (servo sag, approximate link
+   lengths): without a correction the gripper touches the table at the farthest calibration poses.
+   After steps 1–2, measure `robot.droop_m` with a ruler (`test_arm_positions.md`, section 6).
+4. **Gripper.** Measured: `grip_open_deg` = `grip_release_deg` = 200 (fully open), `grip_closed_deg` = 150.
    Higher = more open. Do not use the firmware limits 120/230: the gripper servo stalls and stops responding
    until the board is power-cycled. Test with `python -m braccio_ns --port COM3 grip ...`.
-4. **Grid.** 3 rows × 5 columns, cells 5 cm (rows) × 6 cm (columns). `grid.origin_xy` = centre of `CELL_0_0`
+5. **Grid.** 3 rows × 5 columns, cells 5 cm (rows) × 6 cm (columns). `grid.origin_xy` = centre of `CELL_0_0`
    in the robot frame: row 0 is 26 cm from the base, column 2 (`CELL_r_2`) is straight in front of HOME.
    Mark it on the table, then check that the grid drawn in the GUI camera view matches it.
-5. **Cube size and vision thresholds.** `vision.cube_size_m`, `min_area_px`, `aspect_*`.
-6. **Calibration marker.** Print it with `marker` and attach it to the gripper, facing the camera.
+6. **Cube size and vision thresholds.** `vision.cube_size_m`, `min_area_px`, `aspect_*`.
+7. **Calibration marker.** Print it with `marker` and attach it to the gripper, facing the camera.
    `calibration.marker_offset_tip_m` is its centre in the tip frame: measured 10 cm back from the grasp
    point along the gripper (`[0, 0, -0.1]`). If it sits off the gripper axis, add that lateral offset too.
-   The calibration poses keep the grasp point 5–13 cm above the table (`calibration.tip_heights_m`).
+   The calibration poses keep the grasp point 5–13 cm above the table (`calibration.tip_heights_m`),
+   provided `robot.droop_m` (step 3) is measured.
 
 ## Known limitations
 

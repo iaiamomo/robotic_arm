@@ -43,8 +43,28 @@ def test_ik_reaches_every_cell_and_matches_fk(cfg):
             sol = ik.solve([x, y, z])
             fw = ik.q_to_firmware(sol["q"], cfg["robot"]["grip_closed_deg"])
             assert not ik.check_firmware_limits(fw)
-            # round trip through firmware degrees
-            assert np.linalg.norm(ik.fk_firmware(fw)[:3, 3] - [x, y, z]) < 1e-6
+            # round trip through firmware degrees (the model aims droop_at(reach) higher)
+            aim = [x, y, z + ik.droop_at(np.hypot(x, y))]
+            assert np.linalg.norm(ik.fk_firmware(fw)[:3, 3] - aim) < 1e-6
+
+
+def test_droop_raises_the_model_target_and_sim_lands_on_it(cfg):
+    from braccio_ns.sim import SimArm, SimScene
+
+    cfg["robot"]["droop_m"] = [[0.40, 0.04], [0.20, 0.0]]  # unsorted on purpose
+    ik = BraccioIK(cfg["robot"])
+    assert ik.droop_at(0.10) == 0.0 and abs(ik.droop_at(0.30) - 0.02) < 1e-12 and ik.droop_at(0.50) == 0.04
+    target = np.array([0.36, -0.04, 0.015])  # centre of a cube on the table, far row
+    sol = ik.solve(target)
+    model = ik.fk(sol["q"])[:3, 3]
+    drop = ik.droop_at(np.hypot(*target[:2]))
+    assert np.allclose(model, target + [0, 0, drop], atol=1e-6)
+    scene = SimScene()
+    scene.add("RED", *target[:2])
+    arm = SimArm(ik, scene, cfg["robot"])
+    arm.move(ik.q_to_firmware(sol["q"], cfg["robot"]["grip_open_deg"]))
+    arm.move(ik.q_to_firmware(sol["q"], cfg["robot"]["grip_closed_deg"]))
+    assert arm.held is not None  # the sagging sim arm is at the target height, not `drop` above it
 
 
 def test_ik_rejects_out_of_reach(cfg):

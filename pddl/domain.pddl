@@ -1,5 +1,4 @@
-; Blocks World domain — Listing 3.8, with `(either block cell)` replaced by the
-; equivalent supertype `support` (Fast Downward does not accept `either` in parameters).
+; Blocks World domain. Blocks sit on a `support`: another block or a grid cell.
 (define (domain cardboard_block_world)
   (:requirements :strips :typing :equality)
 

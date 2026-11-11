@@ -1,6 +1,6 @@
-"""Eye-to-hand calibration (thesis §3.2.2).
+"""Eye-to-hand calibration.
 
-Procedure: the arm visits N reference poses (33 in the thesis) computed with IK: the
+Procedure: the arm visits N reference poses (33 by default) computed with IK: the
 grasp point (tip) is spread over the grid area at safe heights above the table, and the
 marker sits wherever the gripper puts it.
 An ArUco marker (DICT_4X4_50, id 0) is attached to the end-effector. For each
@@ -125,6 +125,11 @@ def run_calibration(cfg, camera, arm, ik, log=print):
 
         T = ik.fk(sol["q"])
         p_robot = T[:3, 3] + T[:3, :3] @ offset
+        # FK is the model, which IK raised by the measured droop: the real tip is at `target`.
+        # The sag is close to a rotation about the shoulder, so the marker drops in proportion
+        # to its distance from the base axis.
+        reach = np.hypot(target[0], target[1])
+        p_robot[2] -= ik.droop_at(reach) * np.hypot(p_robot[0], p_robot[1]) / reach
 
         samples = []
         for _ in range(cal["frames_per_point"]):

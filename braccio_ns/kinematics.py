@@ -1,4 +1,4 @@
-"""Inverse kinematics with IKPy (thesis §3.2.1, Listing 3.2) and the mapping
+"""Inverse kinematics with IKPy and the mapping
 IK joint radians <-> firmware degrees.
 
 Chain: base_link(origin) -> base_yaw -> shoulder -> elbow -> wrist_pitch -> wrist_roll -> tip(fixed)
@@ -10,7 +10,7 @@ import numpy as np
 
 from .config import resolve
 
-# Firmware mechanical limits (Listing 3.1)
+# Firmware mechanical limits (firmware/braccio_serial/braccio_serial.ino)
 FW_LIMITS = {
     "grip": (120.0, 230.0),
     "roll": (0.0, 315.0),
@@ -47,6 +47,17 @@ class BraccioIK:
         self.offsets = robot_cfg["joint_offsets_deg"]
         self.signs = robot_cfg["joint_signs"]
         self.tol = robot_cfg.get("ik_tolerance_m", 0.01)
+        droop = np.asarray(robot_cfg.get("droop_m") or np.zeros((0, 2)), float).reshape(-1, 2)
+        self.droop = droop[np.argsort(droop[:, 0])]
+
+    # ---------- measured sag of the real arm ----------
+    def droop_at(self, reach):
+        """How much lower than the model the real grasp point is (m) at horizontal distance
+        `reach` from the base axis, interpolated from robot.droop_m ([reach_m, drop_m] pairs).
+        Beyond the measured range the nearest value is used. 0 when nothing is configured."""
+        if not len(self.droop):
+            return 0.0
+        return float(np.interp(reach, self.droop[:, 0], self.droop[:, 1]))
 
     # ---------- angle mapping ----------
     def _fw(self, joint, q_rad):
@@ -111,13 +122,6 @@ class BraccioIK:
         t3 = phi - t1 - t2
         return t1, t2, (t3 + np.pi) % (2 * np.pi) - np.pi
 
-    def _within_bounds(self, q):
-        for i in (IDX["base"], IDX["shoulder"], IDX["elbow"], IDX["wrist_pitch"]):
-            lo, hi = self.chain.links[i].bounds
-            if not lo - 1e-9 <= q[i] <= hi + 1e-9:
-                return False
-        return True
-
     # smallest |tilt| first; negative = gripper leaning back toward the base
     TILTS_DEG = tuple(sorted(range(-44, 72, 2), key=lambda t: (abs(t), -t)))
 
@@ -128,27 +132,30 @@ class BraccioIK:
         grasp on the table is usually infeasible, so we search for the smallest
         tilt (in the radial plane) that reaches the target within joint
         limits. Each solution is verified with IKPy forward kinematics on the URDF.
+        The model target is raised by droop_at(reach), so that the real (sagging) arm
+        lands on `xyz`: FK of the returned q is therefore that much above `xyz`.
         Raises Unreachable if none exists.
         """
         target = np.asarray(xyz, dtype=float)
         yaw = float(np.arctan2(target[1], target[0]))
         r = float(np.hypot(target[0], target[1]))
+        aim = target + [0.0, 0.0, self.droop_at(r)]
         for tilt in (t for t in self.TILTS_DEG if abs(t) <= max_tilt_deg):
             for elbow_sign in (+1, -1):
-                sol = self._analytic(r, target[2], np.radians(tilt), elbow_sign)
+                sol = self._analytic(r, aim[2], np.radians(tilt), elbow_sign)
                 if sol is None:
                     continue
                 q = np.zeros(len(self.chain.links))
                 q[IDX["base"]] = yaw
                 q[IDX["shoulder"]], q[IDX["elbow"]], q[IDX["wrist_pitch"]] = sol
-                if not self._within_bounds(q):
-                    continue
-                pos_err = float(np.linalg.norm(self.fk(q)[:3, 3] - target))
-                if pos_err > self.tol:
-                    continue  # URDF not planar as assumed -> do not trust this solution
+                # Firmware limits through joint_offsets_deg, not the URDF bounds: those assume
+                # every joint is straight at 157.5 deg, which the measured offsets may contradict.
                 fw = self.q_to_firmware(q, self.cfg["grip_open_deg"])
                 if self.check_firmware_limits(fw):
                     continue
+                pos_err = float(np.linalg.norm(self.fk(q)[:3, 3] - aim))
+                if pos_err > self.tol:
+                    continue  # URDF not planar as assumed -> do not trust this solution
                 return {"q": q, "pos_err_m": pos_err, "tilt_deg": float(tilt)}
         raise Unreachable(
             f"target {np.round(target, 3).tolist()} unreachable within joint limits (max tilt {max_tilt_deg} deg)"

@@ -1,8 +1,7 @@
-"""PDDL problem generation consistent with pddl/domain.pddl (thesis §3.4.1).
+"""PDDL problem generation consistent with pddl/domain.pddl.
 
-Fixes w.r.t. Listings 3.9-3.11: table positions are `cell` objects (not
-`location`), "on table" is (on X CELL_r_c) (no undeclared `block_at`), and
-free cells are declared (clear CELL_r_c) so blocks can be moved onto them.
+Table positions are `cell` objects, "on table" is (on X CELL_r_c), and free
+cells are declared (clear CELL_r_c) so blocks can be moved onto them.
 """
 
 import re

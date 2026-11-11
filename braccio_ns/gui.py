@@ -1,4 +1,4 @@
-"""GUI described in thesis §3.1: left = live list of detected objects;
+"""GUI: left = live list of detected objects;
 centre = pick / drop buttons, command entry + Start Mission, Update Background;
 right = live camera view with the detections (embedded instead of a separate OpenCV window).
 """
@@ -44,24 +44,24 @@ class App:
         left = ttk.Frame(self.root, padding=8)
         left.grid(row=0, column=0, sticky="ns")
         ttk.Label(left, text="Detected objects").pack(anchor="w")
-        self.objects = tk.Listbox(left, width=42, height=18, exportselection=False)
+        self.objects = tk.Listbox(left, width=33, height=18, exportselection=False)
         self.objects.pack(fill="y", expand=True)
         self.objects.bind("<Double-Button-1>", lambda e: self.pick())
         self.objects.bind("<Return>", lambda e: self.pick())
-        ttk.Label(left, text="Double-click (or Enter) to pick it with the gripper").pack(anchor="w")
+        ttk.Label(left, text="Double-click (or Enter) to pick it", wraplength=200).pack(anchor="w")
         self._lines = []
 
         right = ttk.Frame(self.root, padding=8)
         right.grid(row=0, column=1, sticky="nsew")
         self.btn_pick = ttk.Button(right, text="Pick selected", command=self.pick)
         self.btn_pick.grid(row=0, column=0, sticky="ew")
-        self.target = ttk.Combobox(right, width=22, values=self.sys.grid.cells())
+        self.target = ttk.Combobox(right, width=20, values=self.sys.grid.cells())
         self.target.grid(row=1, column=0, sticky="ew", pady=2)
         self.btn_drop = ttk.Button(right, text="Drop on target", command=self.drop)
         self.btn_drop.grid(row=2, column=0, sticky="ew")
         ttk.Separator(right).grid(row=3, column=0, sticky="ew", pady=6)
         ttk.Label(right, text="Command").grid(row=4, column=0, sticky="w")
-        self.cmd = ttk.Entry(right, width=50)
+        self.cmd = ttk.Entry(right, width=30)
         self.cmd.grid(row=5, column=0, sticky="ew")
         self.cmd.bind("<Return>", lambda e: self.start_mission())
         self.btn_start = ttk.Button(right, text="Start Mission", command=self.start_mission)
@@ -72,7 +72,7 @@ class App:
         self.btn_home.grid(row=8, column=0, sticky="ew")
         self.btn_cal = ttk.Button(right, text="Calibrate", command=self.calibrate)
         self.btn_cal.grid(row=9, column=0, sticky="ew", pady=2)
-        self.log_box = tk.Text(right, width=60, height=16, state="disabled")
+        self.log_box = tk.Text(right, width=38, height=16, state="disabled", wrap="word")
         self.log_box.grid(row=10, column=0, sticky="nsew", pady=6)
         right.rowconfigure(10, weight=1)
 
@@ -126,7 +126,7 @@ class App:
             self.log_box.configure(state="disabled")
         mem = self._snapshot()
         ws = build_world_state(mem, self.sys.grid, self.sys.cfg["vision"]["cube_size_m"]) if mem else None
-        lines = [f"{oid}  lvl {mem[oid]['level']}  on {ws.blocks[oid].support if ws else '?'}" for oid in sorted(mem)]
+        lines = [f"{oid} L{mem[oid]['level']} on {ws.blocks[oid].support if ws else '?'}" for oid in sorted(mem)]
         if lines != self._lines:  # rebuild only on change, so clicks and scrolling are not lost
             sel = self._selected()
             self.objects.delete(0, "end")

@@ -1,4 +1,4 @@
-"""start_mission (thesis §3.4.2): perception snapshot -> PDDL init -> LLM goal ->
+"""start_mission: perception snapshot -> PDDL init -> LLM goal ->
 problem file -> planner -> plan -> execution."""
 
 from .config import resolve

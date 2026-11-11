@@ -1,9 +1,12 @@
 <?xml version="1.0"?>
 <!--
-  Approximate kinematic model of the Arduino Braccio++ (RECONSTRUCTED, not from the thesis).
+  Approximate kinematic model of the Arduino Braccio++.
   Link lengths are taken from the classic Braccio geometry and MUST be measured on the real arm.
+  z = 0 is the table where the cubes rest. Here the arm base stands on a 2.4 cm platform, so the
+  shoulder axis is 0.0715 (base -> shoulder) + 0.024 above it.
   Zero configuration = arm pointing straight up (firmware angle 157.5 deg on every joint).
-  Joint limits = firmware mechanical limits (Listing 3.1) minus the 157.5 deg offset.
+  Joint limits = firmware mechanical limits minus the 157.5 deg offset. Informative only: the IK
+  checks the firmware limits through robot.joint_offsets_deg.
 -->
 <robot name="braccio_plusplus">
   <link name="base_link"/>
@@ -17,7 +20,7 @@
   <!-- BASE: firmware [0, 315] -->
   <joint name="base_yaw" type="revolute">
     <parent link="base_link"/><child link="shoulder_link"/>
-    <origin xyz="0 0 0.0715" rpy="0 0 0"/>
+    <origin xyz="0 0 0.0955" rpy="0 0 0"/>
     <axis xyz="0 0 1"/>
     <limit lower="-2.7489" upper="2.7489" effort="1" velocity="1"/>
   </joint>

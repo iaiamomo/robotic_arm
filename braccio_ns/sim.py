@@ -128,6 +128,7 @@ class SimArm:
     def move(self, fw):
         self.log.append("MOVE " + " ".join(f"{a:.1f}" for a in fw))
         tip = self.ik.fk_firmware(fw)[:3, 3]
+        tip[2] -= self.ik.droop_at(np.hypot(tip[0], tip[1]))  # behave like the real, sagging arm
         was_closed, now_closed = self._closed(self.grip_deg), self._closed(fw[0])
         if self.held is not None:
             self.held["xyz"] = tip.copy()

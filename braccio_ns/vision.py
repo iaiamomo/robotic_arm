@@ -1,4 +1,4 @@
-"""Perception (thesis §3.3): background subtraction + chromatic dominance,
+"""Perception: background subtraction + chromatic dominance,
 3D localisation with the RealSense depth map, and a simple tracker that
 assigns persistent IDs and fills `target_memory`.
 """
@@ -23,9 +23,9 @@ COLORS_BGR = {"RED": (0, 0, 255), "GREEN": (0, 200, 0), "BLUE": (255, 0, 0)}
 FONT = cv2.FONT_HERSHEY_SIMPLEX
 
 
-# ------------------------------------------------- thesis functions (Listings 3.6, 3.7)
+# ------------------------------------------------- foreground and colour
 def get_mask_from_frames(background, frame, threshold=50, mode="max"):
-    """Listing 3.6. mode="gray" is the thesis version (grayscale of the difference);
+    """Foreground mask. mode="gray" thresholds the grayscale of the difference;
     mode="max" thresholds the largest per-channel difference instead, which does not
     under-segment dark saturated colours (blue has low luminance)."""
     diff = cv2.absdiff(background, frame)
@@ -36,8 +36,7 @@ def get_mask_from_frames(background, frame, threshold=50, mode="max"):
 
 
 def classify_color(mean_bgr, margin=10):
-    """Chromatic dominance: the dominant channel must exceed both others by `margin`.
-    (The thesis listing applies no margin to GREEN; here it is symmetric.)"""
+    """Chromatic dominance: the dominant channel must exceed both others by `margin`."""
     b, g, r = mean_bgr
     if b > g + margin and b > r + margin:
         return "BLUE"
@@ -59,10 +58,9 @@ def color_masks(frame, margin=10):
 
 
 def identify_cubes(mask, frame, min_area=900, aspect=(0.8, 1.2), margin=10):
-    """Listing 3.7 classifies the mean colour of each foreground blob. With a tilted
-    camera a stack forms a single blob containing two colours, so here the
-    foreground is first split by per-pixel colour and each colour component is
-    filtered by area and aspect ratio."""
+    """Cube candidates. With a tilted camera a stack forms a single blob containing
+    two colours, so the foreground is first split by per-pixel colour and each
+    colour component is filtered by area and aspect ratio."""
     results = []
     for label, cm in color_masks(frame, margin).items():
         m = cv2.morphologyEx((cm & (mask > 0)).astype(np.uint8) * 255, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
@@ -108,7 +106,7 @@ class Track:
 
 class Tracker:
     """Nearest-neighbour association per colour. Absorbs short detection drop-outs
-    ("detection flickering", thesis §5) so IDs stay stable during a mission.
+    (detection flickering) so IDs stay stable during a mission.
     A track under a detected cube (occluded) does not age. A track with colour
     None (a hidden block seeded after execution) matches any colour and adopts it
     when the block is uncovered."""

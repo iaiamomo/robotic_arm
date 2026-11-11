@@ -18,13 +18,13 @@
     "aspect_max": 1.4,
     "color_margin": 10,
     "depth_patch_px": 5,
-    "cube_size_m": 0.03,
+    "cube_size_m": 0.05,
     "stack_xy_tol_m": 0.02,
     "track_match_tol_m": 0.03,
     "track_min_hits": 3,
     "track_max_misses": 15,
     "diff_mode": "max",
-    "_comment": "Thesis values: diff on grayscale (diff_mode='gray'), aspect 0.8-1.2. Aspect depends on camera tilt (blob = top + front face)."
+    "_comment": "diff_mode: 'max' (largest per-channel difference) or 'gray'. Aspect depends on camera tilt (blob = top + front face)."
   },
   "grid": {
     "_comment": "CALIBRATE: robot-frame centre of CELL_0_0 and unit steps along rows/cols (metres).",
@@ -48,10 +48,11 @@
     "_comment_angles": "CALIBRATE: firmware_deg = offset + sign * degrees(q_ik). Order: base, shoulder, elbow, wrist_pitch.",
     "joint_offsets_deg": {
       "base": 95.0,
-      "shoulder": 157.5,
-      "elbow": 157.5,
-      "wrist_pitch": 157.5
+      "shoulder": 152.4,
+      "elbow": 151.7,
+      "wrist_pitch": 150.1
     },
+    "_comment_offsets": "shoulder/elbow/wrist_pitch fitted on 2026-11-11 to ruler measurements of the grasp point above the cubes' table (6 poses, rms 4.3 mm). The nominal 157.5 left the tip 2 cm short and 3-6 cm low.",
     "joint_signs": {
       "base": 1,
       "shoulder": 1,
@@ -64,7 +65,11 @@
     "grip_release_deg": 200.0,
     "_comment_grip": "Measured on the real Braccio++: 200 = hand fully open (HOME, approach, release), 150 = grasp. Higher = more open. Do NOT use the firmware limits (120/230): the gripper servo stalls and stops responding.",
     "approach_height_m": 0.06,
+    "_comment_grasp": "grasp_below_center_m: the fingers close this much below the cube centre (more of the cube between them). Places are lowered by the same amount.",
+    "grasp_below_center_m": 0.01,
     "ik_tolerance_m": 0.01,
+    "_comment_droop": "CALIBRATE: how much lower than commanded the real grasp point ends up, as [reach_m, drop_m] pairs (reach = horizontal distance from the base axis). IK aims higher by the interpolated drop. Measured as in test_arm_positions.md, section 6. Empty = no correction.",
+    "droop_m": [[0.26, 0.010], [0.30, 0.008], [0.34, 0.002], [0.38, 0.008]],
     "home": [
       160.0,
       150.0,
@@ -92,7 +97,7 @@
     "n_points": 33
   },
   "planner": {
-    "_comment": "backend: fast-downward (pip install up-fast-downward) or ff. command is used only by ff: [\"wsl\", \"./ff\"] on Windows (thesis setup), the ff path elsewhere.",
+    "_comment": "backend: fast-downward (pip install up-fast-downward) or ff. command is used only by ff: [\"wsl\", \"./ff\"] on Windows, the ff path elsewhere.",
     "backend": "fast-downward",
     "search": "astar(lmcut())",
     "command": [

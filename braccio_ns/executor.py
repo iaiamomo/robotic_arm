@@ -2,7 +2,7 @@
 
 Every action of the plan is checked for IK feasibility on a copy of the world
 *before* the arm moves, so an unreachable placement aborts the mission instead
-of failing half-way (a failure mode reported in the thesis, §4.3).
+of failing half-way.
 """
 
 import copy
@@ -26,6 +26,14 @@ class Executor:
         sol = self.ik.solve(xyz)
         return self.ik.q_to_firmware(sol["q"], grip)
 
+    def _grasp_point(self, ws, block):
+        """The fingers close grasp_below_center_m below the cube centre, around more of the cube."""
+        return ws.grasp_point(block) - [0, 0, self.r.get("grasp_below_center_m", 0.0)]
+
+    def _place_point(self, ws, target):
+        """Lowered by the same amount, so the held cube still lands at the right height."""
+        return ws.place_point(target, self.grid) - [0, 0, self.r.get("grasp_below_center_m", 0.0)]
+
     def _release_deg(self):
         """Release opens wider than the approach, so a firmly squeezed cube is let go."""
         return self.r.get("grip_release_deg", self.r["grip_open_deg"])
@@ -40,8 +48,8 @@ class Executor:
         transfers clear of the other blocks."""
         up = np.array([0, 0, self.r["approach_height_m"]])
         g_open, g_closed, g_rel = self.r["grip_open_deg"], self.r["grip_closed_deg"], self._release_deg()
-        pick = ws.grasp_point(block)
-        place = ws.place_point(target, self.grid)
+        pick = self._grasp_point(ws, block)
+        place = self._place_point(ws, target)
         return [
             ("above pick", self._pose(pick + up, g_open)),
             ("descend", self._pose(pick, g_open)),
@@ -138,7 +146,7 @@ class Executor:
     def pick(self, ws, block):
         """HOME + GRIP fully open, above the block, descend, GRIP closed, lift."""
         up = np.array([0, 0, self.r["approach_height_m"]])
-        p = ws.grasp_point(block)
+        p = self._grasp_point(ws, block)
         g_open, g_closed = self.r["grip_open_deg"], self.r["grip_closed_deg"]
         waypoints = [(p + up, g_open), (p, g_open), (p, g_closed), (p + up, g_closed)]
         self._move_through(f"pick {block}", waypoints, before=self.prepare_pick)
@@ -146,6 +154,6 @@ class Executor:
     def drop(self, ws, target):
         """Above the target, lower, GRIP fully open (release), retract."""
         up = np.array([0, 0, self.r["approach_height_m"]])
-        p = ws.place_point(target, self.grid)
+        p = self._place_point(ws, target)
         g_closed, g_rel = self.r["grip_closed_deg"], self._release_deg()
         self._move_through(f"drop on {target}", [(p + up, g_closed), (p, g_closed), (p, g_rel), (p + up, g_rel)])

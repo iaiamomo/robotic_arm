@@ -1,13 +1,12 @@
-"""PDDL planner invocation and plan parsing (thesis §3.4.2).
+"""PDDL planner invocation and plan parsing.
 
 Two backends, selected by `planner.backend`:
 - "fast-downward" (default): Fast Downward from the `up-fast-downward` wheel, which ships
   a prebuilt binary for Windows/Linux/macOS, so no compiler or WSL is needed.
   Default search `astar(lmcut())` returns optimal (fewest-moves) plans.
-- "ff": the thesis setup, an external Fast-Forward binary (`planner.command`, e.g. ["wsl", "./ff"]).
+- "ff": an external Fast-Forward binary (`planner.command`, e.g. ["wsl", "./ff"]).
 
-Fix w.r.t. Listing 3.13: actions are parsed with their arguments
-(MOVE <block> <from> <target>); the listing kept only the action name.
+Actions are parsed with their arguments: (MOVE <block> <from> <target>).
 """
 
 import importlib.util

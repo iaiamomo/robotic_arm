@@ -49,7 +49,7 @@ def cmd_ik(a):
         if cell not in g.cells():
             raise SystemExit(f"unknown cell {cell} (valid: {g.cells()[0]} .. {g.cells()[-1]})")
         x, y = g.center(cell)
-        z = (a.level - 0.5) * cube + (r["approach_height_m"] if a.above else 0.0)
+        z = (a.level - 0.5) * cube - r.get("grasp_below_center_m", 0.0) + (r["approach_height_m"] if a.above else 0.0)
         what = f"{cell}, level {a.level}" + (" (approach, above)" if a.above else " (grasp)")
     elif len(a.target) == 3:
         x, y, z = (float(v) for v in a.target)
@@ -73,7 +73,7 @@ def cmd_reach(a):
 
     cfg = make_cfg(a)
     ik, g, cube = BraccioIK(cfg["robot"]), Grid(cfg["grid"]), cfg["vision"]["cube_size_m"]
-    h = cfg["robot"]["approach_height_m"]
+    h, below = cfg["robot"]["approach_height_m"], cfg["robot"].get("grasp_below_center_m", 0.0)
     print("Max tilt (deg) to grasp at levels 1..3 (+approach); X = unreachable")
     for r in range(g.rows):
         row = []
@@ -81,7 +81,7 @@ def cmd_reach(a):
             x, y = g.center(g.name(r, c))
             worst = 0
             for lvl in (1, 2, 3):
-                for z in ((lvl - 0.5) * cube, (lvl - 0.5) * cube + h):
+                for z in ((lvl - 0.5) * cube - below, (lvl - 0.5) * cube - below + h):
                     try:
                         worst = max(worst, abs(ik.solve([x, y, z])["tilt_deg"]))
                     except Unreachable:

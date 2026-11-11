@@ -1,11 +1,9 @@
-"""Natural language -> PDDL goal (thesis §3.5).
+"""Natural language -> PDDL goal.
 
-Llama 3.2 through an OpenAI-compatible endpoint (OpenRouter by default; the thesis used
-LM Studio, still selectable via `llm.base_url`), temperature 0,
-a fresh conversation per request. The system prompt is the thesis prompt; the
-few-shot examples (mentioned in the thesis but not printed) are reconstructed.
-Added: the reply is validated against the known identifiers and, on failure,
-the model gets one corrective retry (`max_retries`).
+Llama 3.2 through an OpenAI-compatible endpoint (OpenRouter by default, or a local
+LM Studio server via `llm.base_url`), temperature 0, a fresh conversation per request,
+a system prompt plus few-shot examples. The reply is validated against the known
+identifiers and, on failure, the model gets one corrective retry (`max_retries`).
 """
 
 import os

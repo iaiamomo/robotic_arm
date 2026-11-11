@@ -1,0 +1,8 @@
+{
+  "_comment": "Override for a local LM Studio server instead of OpenRouter: python -m braccio_ns --config config/lmstudio.json ... Set model to the identifier LM Studio shows for the loaded model.",
+  "llm": {
+    "base_url": "http://localhost:1234/v1",
+    "api_key": "lm-studio",
+    "model": "llama-3.2-3b-instruct"
+  }
+}

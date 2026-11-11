@@ -1,6 +1,6 @@
 /*
  * Arduino Braccio++ serial command firmware.
- * Based on A. M. Capparelli, MSc thesis (Sapienza), Listing 3.1.
+ * Based on A. M. Capparelli, MSc thesis (Sapienza).
  *
  * Protocol (115200 baud, one command per line, case-insensitive):
  *   HOME                     -> home configuration
@@ -9,9 +9,9 @@
  *                            -> gripper, wrist roll, wrist pitch, elbow, shoulder, base
  * Replies: "OK: ..." (with " (clamped)" if a value was limited) or "ERROR: ...".
  *
- * Changes w.r.t. the thesis listing:
- *  - numeric arguments are validated: String::toFloat() returns 0 on garbage, which
- *    the original then clamped to the joint minimum and executed;
+ * Input handling:
+ *  - numeric arguments are validated (String::toFloat() alone would turn garbage into 0,
+ *    i.e. the joint minimum after clamping);
  *  - exact token counts (GRIP takes 1 value, MOVE exactly 6; "GRIPPER 150" is rejected);
  *  - bounded input buffer;
  *  - clamping is reported back to the host.
